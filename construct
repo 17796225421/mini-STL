@@ -1,0 +1,176 @@
+/*construct函数和destroy函数，destroy泛化版本接受两个迭代器，用type_traits判断value_type是否有trivial_destructor
+来决定该泛化函数调用两个实现版本哪一个，特化destroy分为接受一个指针，接受两个char*，接受两个wchar_t*版本，细节是
+construct用了placement new，细节是用了ForwardIterator来++，细节是编译器类型推断用了type_traits*/
+//关于对象的构造和析构
+#pragma once
+#include<new.h>//placement new
+///*new operator 调用operator new（相当于C的malloc）分配空间，再调用construct构造对象，
+//delete operator调用destroy析构对象再调用operator delete（相当于C的free）删除空间
+//placement new是特殊的operator new*/
+//	//Placement new
+//	void* operator new(size_t, void* p)throw() { return p; }
+//	class Widge{};
+//	widge* p = new(ptr)int;//多一个个参数可以在指针指向的已分配空间构造对象
+
+template<typename T1,typename T2>
+inline void construct(T1* p, const T2& value)
+{
+	new(p)T1(value);//在p指向的空间调用T1构造函数
+}
+//destroy有多个版本
+//按泛化特化分，泛化的destroy接受两个迭代器，用type_traits判断value_type是否trivial_destructor,在这个泛化函数内调用两个实现函数分别对应两种情况
+//特化的destroy中有接受一个指针析构一个对象版本，有接受两个char*版本，有接受两个wchar_t*版本
+template<typename T>
+inline void destroy(T* pointer) {
+	pointer->~T();
+}
+//五种迭代器：输入，输出，前向，双向，随机访问迭代器
+//前向迭代器：一个方向遍历，多次读写
+//destroy第二版本，找出函数型别，利用__type_traits找出最适合措施
+//什么是traits
+//traits,提取被传入对象返回类型，隐藏细节并协助调用合适的算法
+////算法要知道迭代器所指对象类型，利用函数模板参数推导机制，进阶用声明内嵌型别，最终用偏特化
+//template<typename I, typename T>
+//void func_impl(I iter, T t)
+//{
+//	T temp;
+//}
+//template<typename I>
+//inline void func(I iter)
+//{
+//	func_impl(iter, *iter);//*iter帮助推导t类型，T是*iter
+//}
+////只是推导参数类型无法睿道返回值类型
+//
+////声明内嵌型别
+////每个stl都有value_type
+//vector<int>v;
+//vector<int>::value_type x;//int是神马。x的数据类型就是神马
+////底层如下
+//template <typename T>
+//class list
+//{
+//public:
+//	typedef T value_type;//每一个value_type调用时相当于T，因为是模板要有神马表示T，所以value_type相当于神马
+//};
+//
+////声明内嵌
+//template<typename T>
+//struct MyIter
+//{
+//	typedef T value_type;//声明内嵌
+//	
+//};
+//template<typename I>
+////typename与class区别
+////打印第二元素的函数
+////template<typename C>
+////void print2nd(const C& container)
+////{
+////	if (container.size() >= 2) {
+////		C::const_iterator iter(container.begin());//C::嵌套，const_iterator是container模板的从属名称，还是一个嵌套从属名称
+////		//嵌套从属名称危险，可能const_iterator是一个static成员数据，不知道是不是类型，编译器默认不是类型，代码错误
+////		//解决方法是typename C::const_iterator...
+////		++iter;
+////		int value = *iter;//value是非嵌套非从属名称
+////		cout << value << endl;
+////	}
+////}
+//typename I::value_type//typename用法二作为返回类型
+//func(I iter) { return *iter; }
+//MyIter<int> ite(new int(8));//可以推断返回值类型为int
+//cout << func(ite);
+////原生指针非class无法定义内嵌型别，用偏特化
+////effectiveC++对traits
+////advance函数将迭代器移动一定距离，对随机访问迭代器用+=n，对其他迭代器用++--
+//template<typename IterT,typename DistT>
+//void advance(IterT& iter, DistT d)
+//{
+//	if (iter is a 随机访问迭代器)//在编译器知道是不是随机访问迭代器用traits，是一个template和多个特化版本，针对迭代器是iterator_traits
+//	{
+//		iter += d;
+//	}
+//	else
+//	{
+//		if (d > 0) { ++iter, --d; }
+//		else { --iter, ++d; }
+//	}
+//}
+////traits要求在用户自定义的类型中必须有typedef如下
+//template<typename I>
+//class deque
+//{
+//public:
+//	class iterator
+//	{
+//		typedef ramdom_access_iterator_tag iterator_categroy;
+//	};
+//};
+//template<typename I>
+//class list
+//{
+//public:
+//	class iterator
+//	{
+//		typedef bidirectional_iterator_tag iterator_categroy;
+//	};
+//};
+////iterator_traits泛化版本利用各种类型iterator_categroy别名为iterator_categroy
+//template<typename I>
+//struct iterator_traits
+//{
+//	typedef typename I::iterator_categroy iterator_categroy;
+//};
+////iterator_traits偏特化版本针对内置指针视为随机访问迭代器
+//template <typename Iter>
+//struct iterator_traits<Iter*>//类后面加尖括号的偏特化版本
+//{
+//	typedef ramdom_access_iterator_tag iterator_categroy;
+//};
+////有了traits后access的if语句
+//if(typeid(typename std::iterator_traits<iter>::iterator_categroy)==typeid(std::ramdom_access_iterator_tag)){}
+////即可让编译器在编译器提前获取类型
+//
+//template<typename I>
+//struct iterator_traits {
+//	typedef typename I::value_type value_type;//内嵌型别声明+typename第二用法
+//};
+//template<typename I>
+//struct iterator_traits<T*>//偏特化
+//{
+//	typedef T value_type;
+//};
+//
+////总结，编译器推导参数类型，最先用函数模板推导参数机制，不能推导返回值类型
+////接着用内嵌型别声明，不能推导内置指针类型
+////接着用一个泛化traits多个偏特化traits，同时在每个自定义类型别名iterator_categroy来使用泛化traits，内置指针就直接用偏特化traits
+template<typename ForwardIterator>
+inline void destroy(ForwardIterator first,ForwardIterator last)
+{
+	__destroy(first, last, value_type(first));//value_type是stl每个容器都有的数据类型，是每个元素的类型
+	//vector<int>v;
+	//vector<int>::value_type v1;//等价
+}
+
+template<typename ForwardIterator,typename T>
+inline void __destroy(ForwardIterator first, ForwardIterator last, T*)
+{
+	typedef typename __type_traits<T>::has_trivial_destructor trivial_destructor;
+	__destroy_aux(first, last, trivial_destructor());
+}//判断是否有trivial_destructor,系统自带析构函数没什么用是trivial_destroy,自定义是non_trivial_destroy
+//元素型别value_type有non_trivial_destructor
+template<typename ForwardIterator>
+inline void __destroy_aux(ForwardIterator first, ForwardIterator last, __false_type)
+{
+	for(;first<last;++first)
+	{
+		destroy(&*first);//如果non_trivial_destructor,对范围内每一个对象调用第一个析构函数
+	}
+}
+//value_type有trivial_destructor，那么什么都不用做，空实现
+template<typename ForwardIterator>
+inline void __destroy_aux(ForwardIterator,ForwardIterator,__true_type){}
+inline void destroy(char*,char*){}
+inline void destroy(wchar_t*,wchar_t*){}
+
+
