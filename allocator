@@ -1,0 +1,158 @@
+/*配置器放在namespace避免命名冲突，类外有有allocate，deallocate，construct，destroy四大函数实际实现，allocator类内
+先是一大堆typedef化简名字，之后是四大函数，还有adress和max两个函数。细节是set_new_handler可以在内存分配失败时作为解决方案
+细节是allocate实现函数中用了::operator new来分配空间*/
+#pragma once
+#ifndef AQUAALLOC
+#define AQUAALLOC
+#include<new>
+#include<cstddef>//for ptrdiff_t俩个指针相减结构,size_t数组下标
+#include<cstdlib>//for exit()终止进程
+#include<climits>//for UNIT_MAX  拆成U INT，unsigned int的最大值
+#include<iostream>//for cerr
+namespace Aqua//避免命名冲突，为了调用namespace的函数或变量，只需要Aqua::即可
+{
+	//allocate实际实现，简单封装new，无法获得空间则报错退出
+	template<typename T>
+	inline T* _allocate(ptrdiff_t size, T*)
+	{
+		set_new_handler(0);
+		//using namespace std;
+		//#include<iostream>
+		//
+		////void out_of_memory()
+		////{
+		////	cout << "Out of memory!" << endl;
+		////}
+		//void out_of_memory()
+		//{
+		//	cout << "Out of memory!" << endl;
+		//	set_new_handler(0);
+		//}
+		//
+		//
+		//int main()
+		//{
+		//	//int* p = new int[0x1fffffff];
+		//	//0x761E4662 处(位于 Project1.exe 中)有未经处理的异常: Microsoft C++ 异常: std::bad_alloc，位于内存位置 0x009EF6C8 处。
+		//	
+		//	//捕获异常
+		//	//try {
+		//	//	int* p = new int[0x1fffffff];
+		//	//}catch (exception& e) {
+		//	//	cout << e.what() << endl;//what给出错误信息可打印
+		//	//}
+		//	//显示bad allocation
+		//	
+		//	//自定义异常处理函数
+		//	set_new_handler(out_of_memory);
+		//	try {
+		//		int* p = new int[0x1fffffff];
+		//	}
+		//	catch (exception& e) {
+		//		cout << e.what() << endl;
+		//	}
+		//	//不断Out of memory！
+		//	//当申请空间失败，调用自定义处理函数，继续申请，不成功继续调用自定义处理程序。
+		//	
+		//	//避免重复调用自定义处理程序
+		//	//Out of memory!
+		//	//bad allocation
+		//	//如果不存在则抛出一个异常
+		//
+		//}
+		T* tmp = (T*)(::operator new((size_t)(size * sizeof(T))));
+		//#include<iostream>
+		//using namespace std;
+		////void* i = operator new(8);
+		////调用全局operator new从堆分配8个字节
+		//
+		////重载operator new
+		////struct A {
+		////	int a;
+		////	char b;
+		////	void* operator new(size_t size, int tag)throw()//throw告诉编译器不要抛出异常
+		////	{
+		////		cout << tag << endl;
+		////		return ::operator new(size);
+		////	}
+		////};
+		//
+		////重载全局operator new
+		//struct A {
+		//	int a;
+		//	char b;
+		//};
+		//void* operator new(size_t size)
+		//{
+		//	cout << size << endl;
+		//	return nullptr;
+		//}
+		//int main()
+		//{
+		//	//void* i = A::operator new(8, 1);
+		//	//cout << i << endl;
+		//	//1
+		//	//0134D1D8
+		//	//输出tag的值并输出i分配到的空间的首地址
+		//
+		//	A* i = new A;
+		//	cout << i << endl;
+		//	//8
+		//	//00000000
+		//	//new 调用重载后的全局operator new，而却不用传入参数size，如果直接调用operator new是要的，缺省size为8，缺省分配内存的首地址为0000000
+		//}
+		if (tmp == 0)
+		{
+			cerr << "out of memory!" << endl;
+			exit(1);//非正常运行导致退出程序
+		}
+		return tmp;
+	}
+	//deallocate实际实现，简单封装delete
+	template<typename T>
+	inline void _deallocate(T* buffer) { ::operator delete(buffer); }
+	//construct实际实现，直接调用对象构造函数
+	template<typename T1,typename T2>
+	inline void _construct(T1* p, const T2& value) { new(p) T1(value); }//对象p，用value调用构造函数
+	//destroy实际实现，直接调用对象析构函数
+	template<typename T>
+	inline void _destroy(T* ptr) { ptr->~T(); }
+
+	template<typename T>
+	class allocator
+	{
+	public:
+		typedef T				value_type;
+		typedef T*				pointer;
+		typedef const T*		const_pointer;
+		typedef T&				reference;
+		typedef const T&		const_reference;
+		typedef size_t			size_type;//size_t数组下标，size_type string大小，vector数目
+		typedef ptrdiff_t		difference_type;//迭代器距离
+		
+		//构造函数
+		allocator() { return; }//缺省
+		template<typename U>
+		allocator(const allocator<U>&){}//函数模板
+
+		//rebind allocator of type U
+		template<typename U>
+		struct rebind(typedef allocator<U> other);//allocator<U>别名other
+
+		//allocate,deallocate,construct,destroy调用上面实际实现，封装do函数，下面作为接口
+		pointer allocate(size_type n, const void* hind = 0) {//配置空间足以储存n个T对象，hind是个提示，可能用来递增区域性或不用
+			return _allocate((difference_type)n, (pointer)0);//括号内类型提示可以省去
+		}
+		void deallocate(pointer p, size_type n) { _deallocate(p); }
+		void construct(pointer p, const_reference value) { _construct(p, value); }
+		void destroy(pointer p) { _destroy(p); }
+
+		//实现address两接口，提取地址
+		pointer address(reference x) { return (pointer)&x; }
+		const_pointer const_address(const_reference x) { return (const_pointer)&x; }
+
+		//实现max_size接口
+		size_type max_size()const { return UINT_MAX / sizeof(T); }//返回成功配置的最大量
+	};
+}//end of namespace Aqua
+#endif//AquaAllocate
