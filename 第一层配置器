@@ -1,0 +1,133 @@
+/*第一层第二层配置器都有一个接口类simple_alloc，里面有allocate和deallocate的接口，容器可以直接使用接口类，接着实现
+第一层配置器__malloc_alloc_template，类中有allocate，deallocate，reallocate，还有oom版本的，oom还要调用set_new_handler
+细节是未定义USE_MALLOC就开放第二层，细节用#if 0来屏蔽代码，细节是第一层配置器用了非型别参数，没有型别参数T，细节是
+set_new_handler要自己实现因为malloc没有，operator new才有*/
+//空间的配置和释放
+#pragma once
+//大于128字节，第一层，malloc free,第二层，内存池，未定义USE_MALLOC就开放两层
+#ifdef USE_MALLOC
+typedef __malloc_alloc_template<0> malloc_alloc;
+typedef __malloc_alloc alloc;//alloc为第一配置器,只是对malloc，realloc简单封装
+#else
+typedef __default_alloc_template<__NODE_ALLOCATOR_THREDES, 0>alloc;//alloc为第二层配置器
+#endif
+//第一第二层都有接口类
+template<typename T,typename Alloc>
+class simple_alloc {
+public:
+	static T* allocate(size_t n)
+	{
+		return 0 == n ? 0 : (T*)Alloc::allocate(n * sizeof(T));//调用alloc类的allocate,分配n个空间给T
+	}
+	static T* allocate()
+	{
+		return (T*)Alloc::allocate(sizeof(T);
+	}
+	static void deallocate(T* p, size_t n) {
+		if (0 != n)Alloc::deallocte(p, n * sizeof(T););//析构n个空间，每个空间是一个T对象
+	}
+	static void deallocate(T* p) {
+		Alloc::deallocate(p,sizeof(T);
+	}
+};
+//所有容器都是用simple_alloc，如vector
+template<typename T,typename Alloc=alloc>//缺省使用alloc作为配置器
+class vector
+{
+protected:
+	typedef simple_alloc<value_type, Alloc>date_allocator;
+	date_allocator::allocate(n);
+	void deallocate() {
+		date_allocator::deallocate(start, end_of_storage - start
+	};//调用simple_alloc的deallocate
+};
+//又如deque
+template<typename T,typename Alloc=alloc,size_t Buf_Siz=0>
+class deque {
+	typedef simple_alloc<T, Alloc>date_allocator;
+	typedef simple_alloc<T*, Alloc>map_allocator;
+	date_allocator::allocate(n);//分配元素
+	map_allocator::allocatr(n);//分配节点
+};
+//之前将接口，现在将第一层配置器，调用malloc，free，内存不足调用set_new_handler
+//第二层配置器，16个自由链表，一个内存池，内存池不够就第一层取set_new_handler
+
+//第一级配置器
+#if 0//C语言没有//只有/**/不实用，所以用#if 0来屏蔽一段代码
+#include<new>
+#define __THROW_BAD_ALLOC throw bad_alloc
+#elif !define(__THROW_BAD_ALLOC)
+#include<iostream.h>
+#define __RHROW__BAD_ALLOC cerr<<"out of memory"<<endl;exit(1);
+#endif
+template<int inst>//没有型别参数T，有非型别参数inst
+//无型别参数
+//template<int size>
+//class CText {
+//	int m_date[size];
+//};
+//
+//int main()
+//{
+//	CText<10> obj;//obj对象的成员m_date初始化为10
+//}
+class __malloc_alloc_template {
+private:
+	//先调用malloc和realloc，不行再调用oom版本的。oom版本的里面有自己的set_new_handler，要是自己没有set_new_handler就直接抛出BAD_ALLOC并exit（1）
+	//函数指针代表的函数全部用来处理内存不足情况，oom：out of memory
+	static void* oom_malloc(size_t n);//不是函数指针，而是返回void*的函数
+	static void* oom_realloc(void*, size_t n);
+	static void(*malloc_alloc_oom_handler)();//指向malloc。。。的函数指针
+public:
+	static void* allocate(size_t n)
+	{
+		void result *= malloc(n);//直接直接调用malloc、
+		if (0 == result) { result = oom_malloc(n); }//如果内存·分配·失败用oom
+		return result;
+	}
+	static void* dealloc(void* p, size_t)
+	{
+		free(p);//直接调用free
+	}
+	static void* realloc(void* p, size_t, size_t new_size)
+	{
+		void* result = realloc(p);//直接调用realloc
+		if (result == 0) {
+			result = oom_realloc;
+			return result;
+		}
+	}
+	//仿真set_new_handle来设置oom版本,因为用malloc而不是operator new所以不带有set_new_handler需要自己实现
+	static void(*set_new_handler(void(*f)))()
+	{
+		void(*old)() = __malloc_alloc_oom_handler;
+		__malloc_alloc_oom_handler = f;
+		return (old);
+	}
+};
+template<int inst>
+void (*__malloc_alloc_template<inst>::malloc_alloc_oom_handler)() = 0;
+template<int inst>
+void* __malloc_alloc_template<inst>::oom_malloc(size_t n)
+{
+	void(*my_malloc_handler)();
+	return *result;
+}
+for (;;)
+{
+	my_malloc_handler = __malloc_alloc_oom_handler;
+	if (my_malloc_handler == 0) { __THROW_BAD_ALLOC; }
+	(*my_alloc_handler)();//调用处理历程，企图释放内存
+	result = realloc(p.n);//再次尝试配置内存
+	if (result) { return resule; }
+}
+typedef __malloc_alloc_template<0> malloc_alloc;
+
+
+
+
+
+
+
+
+
