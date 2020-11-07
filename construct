@@ -117,9 +117,10 @@ inline void destroy(T* pointer) {
 //};
 ////iterator_traits泛化版本利用各种类型iterator_categroy别名为iterator_categroy
 //template<typename I>
-//struct iterator_traits
+//struct iterator_traits//这个模板专门用来萃取迭代器特性如iterator_categroy和value_type就是迭代器指向对象类型
 //{
 //	typedef typename I::iterator_categroy iterator_categroy;
+//	typedef typename I::value_type value_type;
 //};
 ////iterator_traits偏特化版本针对内置指针视为随机访问迭代器
 //template <typename Iter>
