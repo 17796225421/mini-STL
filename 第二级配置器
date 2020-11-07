@@ -1,0 +1,299 @@
+/*第二配置器用了16个自由链表，16个自由链表的数据域连续放在一段内存上，还有一些叫做组块的链表来真正的分配空间，
+组块之间用union obj串联，union中有free_list_link和client_data分别表示每一个组块的指针域和数据域，指针与用来指向下一个组块
+数据域用来真正存放客户数据，然后开始创建第二配置器类__default_alloc_tempalte，放三大通用接口allocate，deallocate，reallocate，
+类外实现allocate，大于128用第一级配置器，小于128，将my_free_list指向合适的16链表，将那个合适自由链表指向的第一个组块
+先用result保存最后将返回，调整一下将那个合适的自由链表指向下一个组块，实现将第一个组块拔出并返回的效果，实现deallocate
+类似，先用q指针接受要回收的组块，再用my_free_list放到合适的自由链表，再将组块接回组块域，在将合适的自由链表接到接回的
+组块上实现回收组块，由于自由链表没有可用组块，需要用refill重新指向新组块，如果新组块只有一个直接送到allocate，如果有多个
+就只返回一个到allocate客端，其余组块要串联并将my_free_list接到第一个串联组块，最后是最难的，用chunk_alloc从内存池获得新
+组块，程序刚开始内存池没有，需要20个32字节组块就从堆malloc40个32字节组块，1个交给allocate19个交给对应自由链表，20个留着
+内存池，接着调用20个64字节组块，由于64字节对应自由链表为空，从内存池20个32字节组块当做10个64字节组块，一个给allocate客户端
+9个用对应的自由链表维护虽然要求20个但只供应10个，此时如果内存池还有零头空间32字节但要去64字节，要把32字节交给对应链表维护，
+，注意此时两个自由链表分别维护的组块一个32一个64但内存分配是连续的因为是从堆一次性获得的，
+接着调用20个96字节组块，由于对应自由链表和内存池都为空，从heapmalloc40+个96字节组块，第一个交给客户端19个用对应自由链表
+维护，其余放在内存池，如果heap没有空间，先看看有没有更大的组块，不要更小的导致多线程问题，还是不行就交给第一级配置器
+来out_of_memory类似于new_handler来试试看*/
+#pragma once
+//第二级配置器避免小额区块带来内存碎片，带来额外负担，cookie来记录内存信息，类似于交税
+//采用内存池，分配内存并维护自由链表，如果下次有相同内存需求就从链表拔出，如果释放内存就回收到自由链表，只有小于128字节
+//分配内存为了方便维护用8的倍数从8,16,24，到128共维护16个自由链表
+//自由链表的节点
+union obj {//free_list_link是指针，用union后并到client_data（是内存）的开头，union数据放在同一个地址开始的内存单元，
+	//在内存闲置时内存前几个字节作为指针连接，客户使用时就单纯作为内存，避免指针带来的开销
+	union obj* free_list_link;//区块第一个是指针指向另一个区块第一个位置的指针
+	char client_data[1];//client_data是内存，free_list_link指针并到内存头几个字节
+	//每个节点用指针维护节点，未被客户使用的内存有自由链表维护，一个节点指针类型obj，指向另一个节点类型也是obj，串联
+
+	//union U {
+	//	int a;
+	//	char b;
+	//	double c;
+	//};//U大小为4，union共用体类似于类却又不同，所有数据类型放在同一个地址开始的内存单元，所以U的大小就是abc中最大的大小，
+	//int main()
+	//{
+	//	U u;
+	//	cout << u << endl;//无法判断输出哪一个
+	//	cout << u.a << endl;//对
+	//}
+};
+//#define Mon 1
+//#define FEB 2
+////用enum代替,效果相同都是预处理器
+//enum DAY
+//{
+//    MON = 1, TUE, WED, THU, FRI, SAT, SUN
+//};
+//int main()
+//{
+//    DAY day;
+//    day = FRI;
+//    cout << day << endl;
+//}
+enum { __ALIGN = 8 };
+enum { __MAX_BYTES = 128 };
+enum { __NFREELISTS = __MAX_BYTES / __ALIGN };//自由链表个数
+//第二级配置器，没有参数类型，第一类型用于多线程，第二类型无用
+template<bool threads, int inst>
+class __default_alloc_template
+{
+private:
+	static size_t ROUND_UP(size_t bytes)//将bytes8的倍
+	{
+		return (bytes + __ALIGN - 1) & ~(__ALIGN - 1);
+	}
+	////位或运算符
+//int a = 1;
+//int b = 2;
+//int c = (a | b);//位或就是每个位分别或运算，b为10，a为01，每个位分别或运算就是11就是3
+//cout << c << endl;
+////位与运算符，每个位分别与运算
+//int d = (a & b);
+//cout << d << endl;
+////位异或运算，每个位分别异或
+//int e = (a ^ b);
+//cout << e << endl;
+////求反运算符，每个位分别求反,0000 0000 0000 0010 求反1111 1111 1111 1101
+//int f = ~ b;
+//cout << f << endl;
+//自由链表节点构造
+private:
+	union obj {
+		union obj* free_list_linkz;
+		char client_data[1];//客户的数据
+	};
+
+	//16个自由链表
+private:
+	//静态成员变量
+	static obj* volatile free_list[__NFREELISTS];//自由链表个数，返回union指针
+	//遇到volatile，编译器不做优化，从而提供特殊地址稳定访问，常用于内存池，多线程
+//	int volatile i = 0;
+//	int a = i;
+//	int b = i;//如果没有volatile编译器做出优化，把上次读的数据也就是给a的数据给b，有了volatile就重新重i访问
+	static size_t FREELIST_INDEX(size_t byte)
+	{
+		return (((byte + __ALIGN - 1) / __ALIGN - 1));//根据byte选择一个8倍数的自由链表
+	}
+	static void* refill(size_t n);//自由链表返回大小n的对象，并可能将其他大小n对象加入同一个自由链表
+	static char* chunk_alloc(size_t size, int& nobjs);//一个自由链表是一个数据块组块chunk可存放n objs个大小为size的空间来放多个大小n对象
+	//静态成员变量声明
+	static char* start_free;//内存池开始
+	static char* end_free;//内存池结束
+	static size_t heap_size;//堆大小
+	//static成员变量和函数
+	//class test
+		//{
+		//private:
+		//	static int num;//静态成员变量属于整个类所有对象，所有可以通过类名访问公、私有静态成员变量，缺乏封装性
+		//public:
+		//	static int func()//静态成员函数属于整个类所有对象，所有可以通过类名访问，没有this指针，只能访问静态成员函数静态成员变量
+		//	{
+		//		return num;
+		//	}
+		//};
+		//int test::num = 10;//静态成员变量必须类外分配空间，全局/静态数据区。因为生命周期为程序的生命周期
+		//int main()
+		//{
+		//	test t;
+		//	cout << t.func() << endl;
+		//}
+	//配置器三大哥第一第二都有
+	static void* allocate(size_t n);
+	static void* deallocate(void* p, size_t n);
+	static void* reallocate(void* p, size_t old_size, size_t new_size);
+}
+//四大大静态成员变量定义
+template<bool thread, int inst>
+char* __default_alloc_template<thread, inst>::start_free = 0;
+template<bool thread, int inst>
+char* __default_alloc_template<thread, inst>::end_free = 0;
+template<bool thread, int inst>
+size_t __default_alloc_template<thread, inst>::heap_size = 0;
+template<bool thread, int inst>
+__default_alloc_template<thread, inst>::obj volatile
+__default_alloc_template<thread, inst>::free_list[__NFREELISTS] =
+{ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+//allocate()实现
+static void* allocate(size_t n) {//分配空间，返回链表的空间，如果是第二级就返回第二级某一个链表的空间
+	obj* volatile* my_free_list;//外面的一个区块，你需要将他放到16个区块中的某一
+	obj* result;
+	//大于128，第一级配置器
+	if (n > (size_t)__MAX_BYTES) {
+		//显式类型转化
+//int a = 0;
+//long b = (long)a;
+//long b = long(a);//两种C风格都可以
+////四种C++显式类型转化
+////const_cast唯一可去除const<typeid>必须是引用或指针
+//const int a = 5;
+//int* b = const_cast<int*>(&a);
+////reinterpre typeid引用或指针，最不安全，低位转化
+//const int sz = 100;
+//class A {
+//public:
+//	int a[sz];
+//};
+//int main()
+//{
+//	A a;
+//	int* a = reinterpret_cast<int*>(&a);
+//}
+		return (malloc_alloc::allocate(n));//返回第一级配置器，第二级是default_malloc_alloc
+	}
+	my_free_list = free_list + FREELIST_INDEX(n);//解释如图
+	result = *my_free_list;
+	//如果不是8倍数就result=0；需要refill来让大小变成8倍数
+	if (result == 0) {
+		void* r = refill(ROUND_UP(n));//利用ROUND_UP来让它变为8的倍数
+		return r;
+	}
+	*my_free_list = result->free_list_link;
+	return (result);
+	//看图，my_free_list是外面的一个链表，插入到一个16个链表中的一个链表，操作为my_free_list = free_list + FREELIST_INDEX(n);
+	//看图，一直以来都理解错误了，链表是链表，区块是区块，链表只有16个，每一个链表对应一连串的区块，
+	//看图，result = *my_free_list;此时my链表已经对应16链表的一个，解引用就是这个链表通过指针指向的一连串区块，result指向最开始区块
+	//并把这个区块从一连串区块拔出来，
+	//看图，*my_free_list = result->free_list_link;做出调整，拔出区块头第二个区块应该变成第一个，就用16链表某一个就是my_free_list指向该第二区块
+	//看图return (result);返回拔出来的区块的指针，这样就相当于分配一个空间，这个空间是16个链表中某一个链表指向的区块域中被拔出的第一个区块
+}
+//deallocate实现
+static void deallocate(void* p, size_t n)
+{
+	obj* q = (obj*)p;
+	obj* volatile* my_free_list;
+	//大于128字节
+	if (n > (size_t)__MAX_BYTES) {
+		malloc_alloc::deallocate(p, n);//第一级配置器类的成员函数deallocate
+		return;
+	}
+	//寻找my_free_list对应的自由链表
+	my_free_list = free_list + FREELIST_INDEX(n);//外面的my_free_list放到对应16个链表
+	//调整free_list
+	q->free_list_link = *my_free_list;
+	//回收区块
+	*my_free_list = q;
+	//看图，	obj* q = (obj*)p;obj* volatile* my_free_list;将q也指向被拔出来的区块开头
+	//看图，	q->free_list_link = *my_free_list;调整free_list就是把free_list对应区块中被拔出的区块接口区块域开头，
+	//其中解引用my_free_list得到被拔出的区块，q是被拔出区块的指针，q->link就是被拔出的指针指向区块域开头区块，这样
+	//被拔出的区块又称为区块域第一个区块
+	//	*my_free_list = q;原本被拔出，现在是区块域第一区块的指针赋值给16自由链表某一个，即是回收区块，相当于收回空间的destroy
+}
+//实现refill，在allocate区块域用满的的时候，新的空间通过chunk_alloc取自内存池chunk，缺省得到20个新区块，内存池不足就不够20个
+template <bool thread,int inst>
+void *__default_alloc_template<thread, inst>::refill(size_t n)
+{
+	int nobjs = 20;//新区块数目20
+	char* chunk = chunk_alloc(n, nobjs);//从内存池取得20个区块
+	obj* volatile* my_free_list;//单独的链表，区块是obj形成
+	obj* result;
+	obj* current_obj, * next_obj;
+	int i;
+	//本应获得20区块，如果只获得1个直接使用这个区块
+	if (nobjs == 1) { return (chunk); }
+	my_free_list = free_list + FREELIST_INDEX(n);//独立我的链表放到16中某一个
+	//在内存池chunk建立自由链表用来给用
+	result = (obj*)chunk;
+	//my_free_list已经放到16链表里面，将他指向新分配的空间
+	*my_free_list = next_obj = (obj*)(chunk + n);
+	//将自由链表指向的各个节点串起来形成组块域
+	for (int i = 1;; ++i)//第0个节点返回客端，第一节节点开始串联
+	{
+		current_obj = next_obj;//这一个节点指向下一个节点，next_obj已经指向了内存池的链表
+		//next_obj指向内存池的链表交给current_obj后就可以继续指向下一个内存池链表
+		next_obj = (obj*)((char*)next_obj + n);
+		if (nobjs - 1 == i) {
+			current_obj->free_list_link = 0;//循环该结束了，最后一个区块的头指针变为0
+			break;
+		}
+		else
+		{
+			current_obj->free_list_link = next_obj;
+		}
+	}
+	return (result);
+}
+//chunk_alloc实现，从内存池取空间给free_list用
+template <bool thread,int inst>
+char* __default_alloc_template<thread, inst>::chunk_alloc(size_t n, int& nobjs)
+{
+	char* result;//用来返回空间
+	size_t total_bytes = n * nobjs;
+	size_t bytes_left = end_free - start_free;//内存池剩余空间
+	if (bytes_left >= total_bytes)
+	{
+		//内存池够用
+		result = start_free;
+		start_free += total_bytes;
+		return (result);
+	}
+	else if (bytes_left >= size) {
+		//不够全部但够一个区块以上用
+		nobjs = bytes_left / size;//能返回多少就多少
+		total_bytes = size * total_bytes;
+		result = start_free;
+		start += total_bytes;
+		return(result);
+	}
+	else {
+		//哪怕一个区块都不够，也要榨干
+		if (bytes_left > 0)
+		{
+			//寻找合适链表，将剩余空间编入链表
+			obj* volatile* my_free_list = free_list + FREELIST_INDEX[bytes_left];//这个独立链表可以存放剩余空间
+			((obj*)start_free)->free_list_link = *my_free_list;//内存池链表第一位置的指针指向这个合适的独立链表
+			*my_free_list = (obj*)start_free;//合适的链表指向内存池链表第一位置
+		}
+	}
+	//配置heap空间补充内存池
+	start_free = (char*)malloc(byte_to_get);//malloc函数返回void*显式转化为char*
+	if (start_free == 0)//如果内存池没有没配到
+	{
+		//因为heap空间不如，malloc失败
+		int i;
+		obj* volatile* my_free_list, * p;
+		//搜索16链表中适当的free_list，有未用区块且足够大
+		for (i = size; i < __MAX_BYTES; i += __ALIGN)
+		{
+			my_free_list = free_list + FREELIST_INDEX[i];
+			p = *my_free_list;//my_free_list已经进入16链表，指向的区块赋值p
+			if (*p!=0)
+			{
+				//p有拿到16链表中的未用区块，把未用区块拔出来利用，可以充分利用16链表中的未利用区块、
+				*my_free_list = p->free_list_link;//调整自由链表就是把链表指向第一个区块的中的指针赋值给我的链表，我的链表得到了为用区块
+				start_free = (char*)p;
+				end_free = start_free + i;
+				//递归调用自己，修正nobjs
+				return(chunk_alloc(size, nobjs));
+				//任何内存池残余零头都放到合适的16链表的合适区块利用
+			}
+		}
+	else {
+		end_free = 0;//连残余零头都没有怎么办
+		start_free = (char*)malloc_alloc::allocate(bytes_to_get);//调用第一级配置器，抛出异常out of memory
+	}
+	heap_size += bytes_to_get;
+	end_free = start_free + bytes_to_get;
+	//递归调用自己，修正nobjs
+	return(chunk_alloc(size, nobjs);
+	}
+}
