@@ -130,7 +130,11 @@ inline void destroy(T* pointer) {
 //};
 ////有了traits后access的if语句
 //if(typeid(typename std::iterator_traits<iter>::iterator_categroy)==typeid(std::ramdom_access_iterator_tag)){}
-////即可让编译器在编译器提前获取类型
+////有了迭代器后的返回值类型
+//template<typename I>
+//typename iterator_traits<I>::value_type func(){}
+////即可让编译器在编译器提前获取类型，
+////相应型别有哪些?value_type,iterator_categroy,different_type,reference,pointer
 //
 //template<typename I>
 //struct iterator_traits {
@@ -139,8 +143,11 @@ inline void destroy(T* pointer) {
 //template<typename I>
 //struct iterator_traits<T*>//偏特化
 //{
-//	typedef T value_type;
+//	typedef T value_type;//可以用iterator_traits<T>::value_type获得指针类型
 //};
+//template<typename I>
+//struct iterator_traits<const T*>{
+//	typedef T value_type;}//偏特化const pointer，萃取的到T不带const
 //
 ////总结，编译器推导参数类型，最先用函数模板推导参数机制，不能推导返回值类型
 ////接着用内嵌型别声明，不能推导内置指针类型
