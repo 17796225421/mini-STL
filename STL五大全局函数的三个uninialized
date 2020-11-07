@@ -1,0 +1,105 @@
+/*STL五大全局函数的三个uninialized_fill,uninialized_fill_n,uninialized_copy,几乎完全相同的主体，普通函数调用
+__函数，__函数判断is_POD，根据判断传给两个aux函数，是POD就直接调用各自STL算法fill，fill_n，copy，不是的话就for循环一个一个构造
+细节是用模板函数参数推断type_traits推断is_POD，细节是uninialized_copy有特化版本char*，wchar_t*用memmove高效
+细节是POD版本直接调用stl算法更高效
+*/
+#pragma once
+template<typename ForwardIterator,typename size,typename T>
+inline ForwardIterator uninitialized_fill_n(ForwardIterator first, size n, const T& x)
+{
+	return __uninialized_fill_n(first, n, x, value_type(first)); //利用value_type函数萃取法第二法得到first的类型
+}
+template<typename ForwardIterator, typename size, typename T,typename T1>
+inline ForwardIterator __uninialized_fill_n(ForwardIterator first, size n, const T& x, T*)
+{
+	//__type_traits
+	typedef typename __type_traits::is_POD_type is_POD;
+	return __uninialized_fill_n_aux(first, n, x, is_POD());
+	//POD plain old data 标量型别或传统C struct型别，拥有trival 的ctor(constructor),dtor(destroy),copy,assignment,
+	//用最有效率的初值填写法，对non_trivial就保守
+}
+template <typename ForwardIterator,typename size,typename T>
+inline ForwardIterator __uninialized_fill_n_aux(ForwardIterator first, size n, const T& x, __true_type)
+{//函数模板的参数推导机制，如果是POD型别
+	return fill_n(first, n, x);//交给高阶函数fill_n
+}
+//函数模板参数推导机制，如果不是POD型别
+template <typename ForwardIterator,typename size,typename T>
+inline ForwardIterator __uninialized_fill_n_aux(ForwardIterator first, size n, const T& x, __false_type)
+{
+	ForwardIterator cur = first;
+	for (; n > 0; --n, ++cur)
+	{
+		construct(&*cur, x);//没有trivial构造函数
+	}
+	return cur;
+}
+
+template <typename InputIterator,typename ForwardIterator>
+inline ForwardIterator uninialized_copy(InputIterator first, InputIterator last, ForwardIterator result)
+{
+	return __uninialized_copy(first, last, result, value_type(result));//萃取迭代器result的value type来判断是否是POD
+}
+//接着实现__uninialized_copy,根据value_type返回的true，false实现两个
+template <typename InputIterator,typename ForwardIterator,typename T>
+inline ForwardIterator __uninialized_copy(InputIterator first, InputIterator last, ForwardIterator result, T*)
+{
+	typedef typename __type_traits<T>::is_POD_value is_POD;
+	return __uninialized_copy_aux(first, last, result, is_POD(T));
+}
+//模板函数推导，如果是POD
+template <typename InputIterator,typename ForwardIterator>
+inline ForwardIterator __uninialized_copy_aux(InputIterator first,InputIterator last,ForwardIterator result,__true_value)
+{
+	return copy(first, last, result);//直接使用标准库copy
+}
+//模板函数推导，不是POD
+template <typename InputIterator, typename ForwardIterator>
+inline ForwardIterator __uninialized_copy_aux(InputIterator first, InputIterator last, ForwardIterator result, __false_value)
+{
+	ForwardIterator cur = result;
+	for (; first != last; ++first, ++cur)
+	{
+		construct(&*cur, *first);//利用construct中的构造函数一个一个构造，不能批量
+		return result;
+	}
+}
+//针对const char*,const wchar_t*的__uninialized_copy特化版本，memmove（直接移动构造）
+inline char* uninialized_copy(const char* first, const char* last, char* result)
+{
+	memmove(result, first, last - first);
+	return (result + (last - first));
+}
+inline wchar_t* uninialized_copy(const wchar_t* first, const wchar_t* last, wchar_t* result)
+{
+	memmove(result, first, sizeof(wchar_t)*(last - first));
+	return (result + (last - first));
+}
+
+template<typename ForwardIterator,typename T>
+inline void uninialized_fill(ForwardIterator first, ForwardIterator last, const T& x)
+{
+	__uninialized_fill(first, last, x, value_type(first));
+}
+template<typename ForwardIterator,typename T,typename T1>
+inline ForwardIterator __uninialized_fill(ForwardIterator first, ForwardIterator last, const T& x, T1*)
+{
+	typedef typename __type_traits<T1>::is_POD_type is_POD;
+	__uninialized_fill_aux(first, last, x, is_POD());
+}
+//模板函数推导，是POD
+template<typename ForwardIterator,typename T>
+inline ForwardIterator __uninialized_fill_aux(ForwardIterator first, ForwardIterator last, const T& x, __true_type)
+{
+	fill(first, last, x);//直接调用标准库fill
+}
+//模板函数推导，不是POD
+template<typename ForwardIterator, typename T>
+inline ForwardIterator __uninialized_fill_aux(ForwardIterator first, ForwardIterator last, const T& x, __false_type)
+{
+	ForwardIterator cur = first;
+	for (; first != last; ++first, ++cur)
+	{
+		construct(&*cur, x);//一个一个构造不能直接一个fill解决
+	}
+}
