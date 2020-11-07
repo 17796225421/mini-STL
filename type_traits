@@ -1,0 +1,44 @@
+/*__type_traits,先泛化类中将所有型别特性都false保守，在特化每一个标量决定是true还是false，分别进行不同的操作
+细节是有一条流水线，接口函数uninialized用iterator_traits，实现函数__uninialized用type_traits，true和false不同做法,*/
+#pragma once
+//__type_traits,只属于SGI不属于STL，萃取型别特性是否有trivial的默认构造，拷贝构造，赋值，析构，是否是POD
+template<typename type>
+struct __type_traits {
+	typedef __true_type				this_dummy_member_must_be_first;
+	//这是防止编译器也用同名的__type_traits却内容不一样时让编译器用这个
+	
+	//__type_traits最保守，全部false
+	typedef __false_type	has_trivial_default_constructor;
+	typedef __false_type	has_trivial_copy_constructor;
+	typedef __false_type	has_trivial_assignment_operator;
+	typedef __false_type	has_trivial_destructor;
+	typedef __false_type	is_POD_type;
+};
+//在针对每一个标量如char，int,原生指针等等实现特化版本，只写一个char和原生指针
+	template<>struct		__type_traits<char> {
+	typedef __true_type		has_trivial_default_constructor;
+	typedef __true_type		has_trivial_copy_constructor;
+	typedef __true_type		has_trivial_assignment_operator;
+	typedef __true_type		has_trivial_destructor;
+	typedef __true_type		is_POD_type;
+};
+template<typename T>struct __type_traits<T*> {
+	typedef __true_type		has_trivial_default_constructor;
+	typedef __true_type		has_trivial_copy_constructor;
+	typedef __true_type		has_trivial_assignment_operator;
+	typedef __true_type		has_trivial_destructor;
+	typedef __true_type		is_POD_type;
+};
+//一次性运用iterator_traits的萃取value_type和type_traits的is_POD
+template<typename ForwardIterator,typename Size,typename T>
+inline ForwardIterator uninitialized_fill_n(ForwardIterator first, Size n, const T& x)
+{
+	return __uninitialized_fill_n(first, n, x, value_type(first));//利用iterator_traits的value_type萃取first型别
+}
+template<typename ForwardIterator,typename Size,typename T,typename T1>
+inline ForwardIterator __uninitialized_fill_n(ForwardIterator first, Size n, const T& x, T1*)
+{
+	typedef typename __type_traits<T1>::is_POD_type is_POD;
+	return __uninitialized_fill_n_aux(first, n, x, is_POD());//利用type_traits的is_POD_type判断是否是
+}
+//后面就是是POD和不是POD的操作,是POD直接调用fill_n(),不是的话要一个一个构造
