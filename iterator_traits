@@ -1,0 +1,107 @@
+/*iterator_traits,先来iterator基类防止有的迭代器没五个型别，再来建立iterator_traits类typedef五个型别，再来偏特化
+原生指针的iterator_traits版本，再来实现五个型别针对原生指针的偏特化五型别版本，再来实现iterator_categroy的五迭代器
+tag方便算法重载，再来实现__advance算法的五个迭代器重载版本，再来实现advance调用__advance，细节是建立五个tag的时候用到
+继承，之后就可以__advance时如果inputIterator和ForwardIterator动作相同只用实现input不用实现forward，for自动调用基类的
+input*/
+#pragma once
+//iterator_traits基础知识看construct,利用内嵌型别的编程技巧和模板函数参数推断
+//迭代器实现
+template<typename I>
+struct iterator_traits {//只要每一个容器特定的迭代器都定义下面五种相应型别
+	typedef typename I::value_type					value_type;//迭代器指向对象型别
+	typedef typename I::iterator_categroy			iterator_categroy;
+	typedef typename I::differece_type				difference_type;//两迭代器之间距离
+	typedef typename I::pointer						pointer;
+	typedef typename I::reference					reference;
+};
+//value_type型别针对指针和const指针的两个特化版本
+template<typename T>
+struct iterator_traits<T*>
+{
+	typedef T value_type;
+};
+template<typename T>
+struct iterator_traits<const T*>
+{
+	typedef T value_type;//返回T而不是constT
+};
+//difference_type型别针对指针两个特化版本
+template<typename T>
+struct iterator_traits<T*>
+{
+	typedef ptrdiff_t difference_type;
+};
+template<typename T>
+struct iterator_traits<const T*>
+{
+	typedef ptrdiff_t difference_type;
+};
+//任何时候需要迭代器I的difference_type都可以
+//typename iterator_traits<I>::difference_type
+//pointer,reference针对原生指针的偏特化版本
+template <typename T>
+struct iterator_traits<T*>
+{
+	typedef T* pointer;
+	typedef T& reference;
+};
+template <typename T>
+struct iterator_traits<const T*>
+{
+	typedef const T* pointer;
+	typedef const T& reference;
+};
+//iterator_categroy型别
+//tag只是用来重载函数需要的不同参数，不用到
+struct input_iterator_tag{};
+struct output_iterator_tag{};
+struct forward_iterator_tag:public input_iterator_tag{};
+struct bidirectional_iterator_tag:public forward_iterator_tag{};
+struct random_access_iterator_tag:public bidirectional_iterator_tag{};
+//实现__advance()五大iterator重载函数
+template<typename InputIterator,typename Distance>
+inline void __advance(InputIterator& i, Distance n, input_iterator_tag)
+{
+	while (--n)++i;
+}
+//ForwardIterator继承直接用InputIterator就好，操作一样。形参输入forword由于没有定义直接调用继承的inputIterator
+template<typename Bidirectional_iterator,typename Distance>
+inline void __advance(Bidirectional_iterator& i, Distance n, bidirectional_iterator_tag)
+{
+	if (n > 0) {
+		while (--n)++i;
+	}
+	else {
+		while (++n)--i;
+	}
+}
+template<typename Random_access_iterator,typename Distance>
+inline void __advance(Random_access_iterator& i, Distance n, random_access_iterator_tag) {
+	i += n;
+}
+template <typename InputIterator,typename Distance>//以算法所能接受最低阶迭代器来命名
+inline void advance(InputIterator& i, Distance d)
+{
+	__advance(i, d, iterator_traits<InputIterator>::iterator_categroy);//选择一个__重载函数
+}
+//针对原生指针的iterator_category偏特化版本
+template<typename T>
+struct iterator_traits<T*> {
+	typedef random_access_iterator_tag iterator_categroy;
+};
+template<typename T>
+struct iterator_traits<const T*> {
+	typedef random_access_iterator_tag iterator_categroy;
+};
+//为避免有的迭代器没有这五个型别，设计一个iterator class保存五型别，所有迭代器都继承这个class
+template<typename Categroy,typename T,typename Distance=ptrdiff_t,typename pointer=T*,typename reference=T&>
+struct iterator {
+	typedef Categroy			iterator_categroy;
+	typedef T					value_type;
+	typedef Distance			difference_type;
+	typedef pointer				pointer;
+	typedef reference			reference;
+};//只要所有迭代器都继承这个类就都有五个型别，都可用iterator_traits,用这个基类要为前两个给个参数，后三个有默认值
+//比如list的迭代器
+template<typename item>
+struct ListIter :public std::iterator<std::forward_iterator_tag,item>{};
