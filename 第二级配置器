@@ -1,0 +1,123 @@
+/*第二配置器实现，类__default_alloc_template中存放四个静态成员变量free_list[NFREELIST]返回个数16个，start_list
+,end_list返回始末位置，heap_size，还有三大配置器函数allocate，deallocate，reallocate，特点是用了16个自由链表的内存池
+特点是内存池按8倍数分成16个区域存放相同大小内存并通过16个自由链表维护，特点是每个区块的头用指针，细节是为了避免指针开销
+用union组织每个节点，细节是用了enum来分别表示8,128,16，细节是介绍了static成员函数和变量*/
+#pragma once
+//第二级配置器避免小额区块带来内存碎片，带来额外负担，cookie来记录内存信息，类似于交税
+//采用内存池，分配内存并维护自由链表，如果下次有相同内存需求就从链表拔出，如果释放内存就回收到自由链表，只有小于128字节
+//分配内存为了方便维护用8的倍数从8,16,24，到128共维护16个自由链表
+//自由链表的节点
+union obj {//union数据放在同一个地址开始的内存单元，避免指针带来的开销
+	union obj* free_list_link;//区块第一个是指针指向另一个区块第一个位置的指针
+	char client_data[1];//区块第二个位置是数据开始的地方
+	//每个节点用指针维护节点，未被客户使用的内存有自由链表维护，一个节点指针类型obj，指向另一个节点类型也是obj，串联
+
+	//union U {
+	//	int a;
+	//	char b;
+	//	double c;
+	//};//U大小为4，union共用体类似于类却又不同，所有数据类型放在同一个地址开始的内存单元，所以U的大小就是abc中最大的大小，
+	//int main()
+	//{
+	//	U u;
+	//	cout << u << endl;//无法判断输出哪一个
+	//	cout << u.a << endl;//对
+	//}
+};
+//#define Mon 1
+//#define FEB 2
+////用enum代替,效果相同都是预处理器
+//enum DAY
+//{
+//    MON = 1, TUE, WED, THU, FRI, SAT, SUN
+//};
+//int main()
+//{
+//    DAY day;
+//    day = FRI;
+//    cout << day << endl;
+//}
+enum{__ALIGN=8};
+enum{__MAX_BYTES=128};
+enum{__NFREELISTS=__MAX_BYTES/__ALIGN};//自由链表个数
+//第二级配置器，没有参数类型，第一类型用于多线程，第二类型无用
+template<bool threads,int inst>
+class __default_alloc_template
+{
+private:
+	static size_t ROUND_UP(size_t bytes)//将bytes8的倍
+	{
+		return (bytes + __ALIGN - 1) & ~(__ALIGN - 1);
+	}
+	////位或运算符
+//int a = 1;
+//int b = 2;
+//int c = (a | b);//位或就是每个位分别或运算，b为10，a为01，每个位分别或运算就是11就是3
+//cout << c << endl;
+////位与运算符，每个位分别与运算
+//int d = (a & b);
+//cout << d << endl;
+////位异或运算，每个位分别异或
+//int e = (a ^ b);
+//cout << e << endl;
+////求反运算符，每个位分别求反,0000 0000 0000 0010 求反1111 1111 1111 1101
+//int f = ~ b;
+//cout << f << endl;
+//自由链表节点构造
+private:
+	union obj {
+		union obj* free_list_linkz;
+		char client_data[1];//客户的数据
+	};
+
+	//16个自由链表
+private:
+	//静态成员变量
+	static obj* volatile free_list[__NFREELISTS];//自由链表个数，返回union指针
+	//遇到volatile，编译器不做优化，从而提供特殊地址稳定访问，常用于内存池，多线程
+//	int volatile i = 0;
+//	int a = i;
+//	int b = i;//如果没有volatile编译器做出优化，把上次读的数据也就是给a的数据给b，有了volatile就重新重i访问
+	static size_t FREELIST_INDEX(size_t byte)
+	{
+		return (((byte + __ALIGN - 1) / __ALIGN - 1));//根据byte选择一个8倍数的自由链表
+	}
+	static void* refill(size_t n);//自由链表返回大小n的对象，并可能将其他大小n对象加入同一个自由链表
+	static char* chunk_alloc(size_t size, int& nobjs);//一个自由链表是一个数据块组块chunk可存放n objs个大小为size的空间来放多个大小n对象
+	//静态成员变量声明
+	static char* start_free;//内存池开始
+	static char* end_free;//内存池结束
+	static size_t heap_size;//堆大小
+	//static成员变量和函数
+	//class test
+		//{
+		//private:
+		//	static int num;//静态成员变量属于整个类所有对象，所有可以通过类名访问公、私有静态成员变量，缺乏封装性
+		//public:
+		//	static int func()//静态成员函数属于整个类所有对象，所有可以通过类名访问，没有this指针，只能访问静态成员函数静态成员变量
+		//	{
+		//		return num;
+		//	}
+		//};
+		//int test::num = 10;//静态成员变量必须类外分配空间，全局/静态数据区。因为生命周期为程序的生命周期
+		//int main()
+		//{
+		//	test t;
+		//	cout << t.func() << endl;
+		//}
+	//配置器三大哥第一第二都有
+	static void* allocate(size_t n);
+	static void* deallocate(void* p, size_t n);
+	static void* reallocate(void* p, size_t old_size, size_t new_size);
+}
+//四大大静态成员变量定义
+template<bool thread,int inst>
+char* __default_alloc_template<thread,inst>::start_free = 0;
+template<bool thread, int inst>
+char* __default_alloc_template<thread,inst>::end_free = 0;
+template<bool thread, int inst>
+size_t __default_alloc_template<thread,inst>::heap_size = 0;
+template<bool thread ,int inst>
+__default_alloc_template<thread, inst>::obj volatile
+__default_alloc_template<thread, inst>::free_list[__NFREELISTS] =
+{ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
