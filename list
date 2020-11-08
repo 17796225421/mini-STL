@@ -1,0 +1,241 @@
+/*list容器有3个类，节点类，迭代器类，list类，节点类保存了两个节点指针和一个数据，迭代器定义了一大堆typedef，构造函数，
+迭代器的运算符重载，list类public主要是一大堆成员函数，protected主要是几个辅助函数和一个成员数据指向节点的指针
+细节是节点2个指针和list的迭代器不一样，list迭代器指向节点，解引用可调用节点的2个指针和1个数据，细节是迭代器是双向迭代器
+细节是运算符重载记得利用左++来重载右++，细节是insert函数可辅助push_back,push_front，细节是erase可以辅助pop两函数
+细节是insert函数还受到辅助函数creat_node，细节是辅助函数creat_node还受到get_node辅助，细节是erase函数流程和insert流
+程差不多的辅助函数流程，细节是销毁一个节点时往往要指针提前指向下一个节点防止丢失，细节是transfer函数辅助splice函数让
+splice可以更大自由重载，细节是transfer还能辅助merge，reverse，最终boss 快速sort函数*/
+#pragma once
+//list节点
+template <typename T>
+struct __list_node {
+	typedef void* void_pointer;
+
+	void_pointer prev;
+	void_pointer next;
+	T date;
+};
+//list迭代器
+template<typename T,typename Ref,typename Ptr>
+struct __list_iterator {
+	typedef __list_iterator<T, T&, T*>		iterator;
+	typedef __list_iterator<T, Ref, Ptr>		self;
+	typedef bidirectional_iterator_tag		iterator_categroy;
+	typedef T value_type;
+	typedef Ptr pointer;
+	typedef Ref reference;
+	typedef __list_node<T>* link_type;
+	typedef size_t size_type;
+	typedef ptrdiff_t difference_type;
+
+	__list_iterator(link_type x) :node(x){}
+	__list_iterator() {}
+	__list_iterator(const iterator& x) :node(x.node){}
+	bool operator==(const self& x) const{ return node == x.node; }
+	bool operator!=(const self& x) const { return node != x.node; }
+	reference operator*()const { return (*node).data; }
+	pointer operator->()const { return &(operator*()); }
+	self& operator++() {
+		node = (link_type)((*node).next);
+		return *this;
+	}
+	selt& operator++(int)() {
+		self temp = *this;
+		++* this;
+		return temp;
+	}
+	self& operator--() {
+		node = (link_type)((*node).prev);
+		return *this;
+	}
+	selt& operator--(int)() {
+		self temp = *this;
+		--* this;
+		return temp;
+	}
+
+	link_type node;//迭代器内部一个指针node指向节点、
+};
+template<typename T,typename Alloc=alloc>
+class list {
+public:
+	typedef __list_node* link_type;
+	typedef T* iterator;
+
+	list() { empty_initialize(); }//构造空链表
+	//让迭代器可以指向一个空节点作为尾节点来实现下面函数
+	iterator begin() { return(link_type)(*node).next; }
+	iterator end() { return node; }
+	bool empty()const { return node->next == node; }//next是节点的迭代器，空时指向自身，正好node也指向这个节点
+	size_type size()const {
+		size_type result = 0;
+		distance(begin(), end(), result);//全局函数辅助
+		return result;
+	}
+	reference front() { return *begin(); }
+	reference back() { return *(--end()); }
+	void push_back(const T& x) { insert(end(), x); }
+	void push_front(const T& x) { insert(begin(), x); }
+	iterator insert(iterator position, const T& x) {
+		link_type tmp = creat_node(x);
+		//插在position前面
+		tmp->next = position.node;
+		tmp->prev = position.node->prev;//tmp指向别人
+		(link_type(position.node->prev)->next) = tmp;
+		position.node->prev = tmp;//别人指向tmp、
+		return tmp;
+	}
+	iterator erase(iterator position) {
+		link_type next_node = link_type(position.node->next);
+		linkk_type prev_node = link_type(position.node->prev);
+		prev.next = next_node;
+		next_node->prev = prev_node;//两边跳过要移除的节点
+		destroy_node(position.node);//析构并释放要移除的节点
+		return iterator(next_node);//返回指向要移除节点下一个节点的指针
+	}
+	void pop_front() { erase(begin()); }
+	void pop_back() { erase(end()); }
+	void clear() {
+		link_type cur = (link_type)node->next;//node默认在尾指针，next就是begin()
+		while (cur != node) {
+			link_type tmp = cur;
+			cur = (link_type)cur->next;
+			destroy_node(tmp);//先tmp待在这，cur跑到下一个节点，析构并释放tmp，循环，没有tmp，析构调cur指向的节点后cur无法找到下一个节点不行vector
+		}
+		node_next = node;
+		node_prev = node;
+	}
+	void remove(const T& value) {
+		iterator first = begin();
+		iterator last = end();
+		while (first != last) {
+			iterator next = first;
+			++next;//还是用next跑到下一个节点，这样销毁first不会丢失下一个节点位置
+			if (*firsr == value) {
+				erase(first);
+			}
+			first = next;
+		}
+	}
+	void unique() {//如果数组相同且连续就移除到只剩一个
+		iterator first = begin();
+		iterator last = end();
+		if (last == first)return;
+		iterator next = first;//还是防止丢失
+		while (++next != last) {
+			if (*first == *next) {
+				erase(next);
+			}
+			else {
+				first = next;
+			}
+			next = first;
+		}
+	}
+	//细节，transfer辅助函数帮splice接口函数，而接口函数提供多个重载版本增加弹性
+	void splice(iterator position, list& x) {//x接合于position所给位置之前
+		if (!x.empty()) {
+			transfer(position, x.begin(), x.end());
+		}
+	}
+	void splice(iterator position, list& , iterator i) {//将i所指元素接合于position之前
+		iterator j = i;
+		++j;
+		if (position == i || position == j)return;
+		transfer(positon, i, j);//j是为了和i表现出一个范围，这个范围只有一个元素i指向的节点，这个范围接到position'前
+	}
+	void splice(iterator position, list&, iterator first, iterator last) {//将first和last范围节点接到position前面
+		if (first != last) {
+			transfer(position, first, last);
+		}
+	}
+	//transfer辅助函数帮merge,reverse,sort实现，代码过多写类外
+	void merge(list<T, Alloc>& x);
+	void reverse();
+	void sort();
+protected :
+	typedef __list_node<T> list_node;
+	typedef simple_alloc<list_node, Alloc> list_node_allocator;//每次配置一个节点
+
+	link_type get_node() { return list_node_allocator::allocate; }
+	void put_node(link_type p) { list_node_allocator::reallocate(p); }//释放节点
+	link_type creat_node(const T& x) {//配置并构造一个节点有元素
+		link_type p = get_node();
+		construct(&p->date, x);//全局函数辅助
+		return p;
+	}
+	void destroy_node(link_type p) {//析构并释放一个节点
+		destroy(&p->data);
+		put_node(p);
+	}
+	void empty_initialize() {//构造空链表的辅助函数
+		node = get_node();
+		node->next = node;
+		node->prev = node;
+	}
+	void transfer(iterator position, iterator first, iterator last) {//一个链表的部分迁移掉另一个链表（可以是同一个链表），辅助splice，sort，merge等复杂函数
+		if (position != last) {
+			(*(link_type((*last.node).prev))).next = position.node;//看图，增长，last的前一个迭代器指向position的节点
+			(*(link_type((*first.node).prev))).next = last.node;//看图，截短，first的前一个节点的迭代器指向last的节点
+			(*(link_type((*position.node).prev))).next = first.node;//看图，增长，position前一个节点的迭代器指向first的节点
+			link_type tmp = link_type((*position.node).prev);//tmp指向position前一个节点
+			(*position.node).prev = (*last.node).prev;//node是list迭代器指向node所以才要解引用
+			(*last.node).prev = (*first.node).prev;
+			(*first.node).prev = tmp;//如果没有tmp，只要没有一个或找不到指向position的前一个节点他就会丢失
+		}
+	}
+
+	link_type node;//node是一个list迭代器，*得到节点，只要一个迭代器就可表现整个双向环装迭代器，不要混淆list迭代器（1）和节点迭代器（2个）
+};
+//merge，x和*this链表先都递增后x合并到*this
+template<typename T,typename Alloc>
+void list<T, Alloc>::merge(list<T, Alloc>& x) {
+	iterator first1 = begin();
+	iterator last1 = end();
+	iterator first2 = x.begin();
+	iterator last2 = x.end();
+	//默认已经都递增了
+	while (first1！ = last1 && first2 != last2) {
+		if (*first2 < *first1) {
+			iterator next = first2;//防丢失
+			transfer(first1, first2, ++next);//将first2指向的节点（已知比first1小）合并到first1前面，且此时next已经跑到first2旧链表后面了
+			first2 = next;//这样first2又回到旧链表
+		}
+		else ++first1;
+	}
+	//循环结束使如果x中最大结点比*this大，那就回有剩
+	if (first2 != last2) transfer(last1, first2, last2);//将x剩下的节点放到*this最后面
+}
+//reserve颠倒
+template<typename T,typename Alloc>
+void list<T, Alloc>::reverse() {
+	if (node->next == node || link_type(node->next)->next == node)return;//空链表或只有一个节点
+	iterator first = begin();
+	++first;
+	while (first != end()) {
+		iterator old = first;
+		++first;
+		transfer(begin(), old, first);
+	}
+}
+//sort,STL算法sort只能用于random_access_iterator
+template<typename T,typename Alloc>
+void list<T, Alloc>::sort() {//quick sort
+	if (node->next == node || link_type(node->next)->next == node)return;
+	list<T, Alloc>carry;
+	list<T, Alloc>counter[64];
+	int fill = 0;
+	while (!= empty()) {
+		carry.splice(carry.begin(), *this, begin());
+		int i = 0;
+		while (i < fill && !counter[i].empty()) {//第一次循环直接跳过，第二次循环就可以进入，一旦进入就是最关键的排序
+			counter[i].merge(carry);//第二次循环进入时counter[0]和carry分别是之前*this的第一第二个节点
+			//，merge把两个节点都放到counter[0]，这是第一次递增两个节点，就假设只有两个节点
+			carry.swap(counter[i++]);//两个节点放到carry，i=1，counter[1]空跳出二重循环
+		}
+		carry.swap(counter[i]);//把两个节点放到counter1
+		if (i == fill)++fill;//此时*this为空离开循环
+	}
+	for (int i = 1, i < fill; ++i) 	counter[i].merge(counter[i - 1]);
+	swap(counter[fill - 1]);
+}
