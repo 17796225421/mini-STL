@@ -1,0 +1,32 @@
+/*stack,是容器适配器，缺省以deque为底层容器，可以轻易调用底层容器的操作来实现栈的操作，细节是typedef是给底层容器的
+typedef起别名不是给自己，函数也是用底层容器*/
+#pragma once
+template<typename T,typename Sequence=deque<T>>
+class stack {
+	friend bool operator== __STL_NULL_TMPL_ARGS(const stack&, const stack&);
+	friend bool operator<  __STK_NULL_TMPL_ARGS(const stack&, const stack&);
+public:
+	typedef typename Sequence::value_type value_type;
+	typedef typename Sequence::size_type size_type;
+	typedef typename Sequence::reference reference;
+	typedef typename Sequence::const_reference const_reference;
+	
+	//完全利用底层容器c
+	bool empty()const { return c.empty(); }
+	size_type size()const { return c.size(); }
+	reference top() { return c.back(); }
+	const_reference top() const{ return c.back; }//const成员函数不改变类的数据成员
+	void push(const value_type& x) { c.push_back(); }
+	void pop() { c.pop_back(); }
+
+protected:
+	Sequence c;//底层容器默认是deque
+};
+template<typename T,typename Sequence>
+bool operator==(const stack<T, Sequence>& x, const stack<T, Sequence>& y) {
+	return x.c == y.c;
+}
+template<typename T,typename Sequence>
+bool operator<(const stack<T, Sequence>& x, const stack<T, Sequence>& y) {
+	return x.c < y.c;
+}
