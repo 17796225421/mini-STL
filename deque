@@ -1,0 +1,363 @@
+/*deque,有迭代器类和deque类，迭代器类中有数据成员first，last，cur，node，前3者指向缓冲区，一个迭代器中的这3个指向一个缓冲区
+node指向中控器，中控器是一段连续的内存，内存中保存指针指向缓冲区，按顺序，中控器的第一个节点指向一个缓冲区。。。迭代器的node
+指针指向中控器的某一个节点，迭代器类中还有一大堆极其重要的重载运算符，deque类的public中有一大堆常见函数，protected中有
+成员数据map，map_size，start，finish，map是指向中继器节点的指针，map_size是map大小，start和finish都是迭代器，每个
+finish和start都有4个指针，start迭代器的node指向第一个中间节点，finish的指向最后一个中间节点，start的first，last，cur
+都指向第一个缓冲区，finish的都指向最后一个，辅助函数非常重要，大概有push和pop的辅助，辅助辅助的函数，细节是1个缓冲区默认
+512字节8个位置，细节是中控器最小8个位置，否则必需要的多两个位置放头尾方便扩充，细节是deque类的typedef将deque迭代器
+叫做iterator，把指向中控器的指针叫做map_pointer，细节是迭代器不要再和指针等同了，指针可以直接*，迭代器你要重载运算符*/
+#pragma once
+template<typename T,typename Ref,typename Ptr,size_t BufSiz>
+struct __deque_iterator {
+	typedef __deque_iterator<T, T&, T*, BufSiz> iterator;
+	typedef __deque_iterator<T, const T&, const T*, BufSiz> const_iterator;
+	typedef random_access_iterator_tag iterator_categroy;
+	typedef T value_type;
+	typedef Ptr pointer;
+	typedef Ref reference;
+	typedef size_t size_type;
+	typedef ptrdiff_t difference_type;
+	typedef T** map_pointer;//指向map的指针
+	typedef __deque_iterator self;
+
+	reference operator*()const { return *cur; }
+	reference operator->()const { return &(operator*()); }
+	difference_type operator-(const self& x)const {
+		return difference_type(buffer_size()) * (node - x.node - 1) + (cur - first) + (x.last - x.cur);
+	}
+	self& operator++() {
+		++cur;
+		if (cur == last) {//缓冲区尾，跳到下一个缓冲区头
+			set_node(node + 1);//强大set_node，迭代器中，node指向下一个node，first指向下一个缓冲区头，last指向下一个缓冲区尾，
+			cur = first;
+		}
+		return *this;
+	}
+	self operator++(int) {//标准写法背出来
+		self tmp = *this;
+		++* this;
+		return tmp;
+	}
+	self& operator--() {//和++不同的是如果一开始就在头就直接判断不能--
+		if (cur == first) {
+			set_node(node - 1);
+			cur = last;
+		}
+		--cur;//因为这是后cur是在last不是在最后一个元素
+		return *this;
+	}
+	self operator--(int) {
+		self tmp = *this;
+		--* this;
+		return tmp;
+	}
+	self& operator+=(difference_type n) {
+		difference_type offset = n + (cur - first);//跳跃距离+cur到起点距离=跳跃后到起点距离
+		if (offset >= 0 && ofset < difference_type(buffer_size())) cur += n;
+		else {
+			//不在同一缓冲区,数学，建议了解就好,推导出来也会忘，不要背-
+			difference_type node_offset = offset > 0 ? offset / difference_type(buffer_size()) :
+				-difference_type((-offset - 1) / buffer_size()) - 1;
+			set_node(node + node_offset);//切换缓冲区，可能连跳好几个缓冲区
+			cur = first + difference_type(offset - node_offset * difference_type(buffer_size()));//涉及数学
+		}
+		return *this;
+	}
+	self operator+(difference_type n)const { return *this += n; }//*this就是迭代器，这里是迭代器类
+
+	static size_t buffer_size() { return __deque_buf_size(BufSiz, sizeof(T)); }//决定缓冲区大小
+	void set_node(map_pointer new_node) {
+		node = new_node;
+		first = *new_node;//解引用new_node得到node，node是一个指针指向新缓冲区头，所以first这个迭代器的指针也指向缓冲区头
+		last = first + difference_type(buffer_size());
+	}
+	self& operator-=(difference_type n) { return *this += -n; }
+	self operator-(difference_type n)const { return *this -= n; }
+	reference operator[](difference_type n)const { return *(*this + n); }
+	bool operator==(const self& x)const { return cur == x.cur; }
+	bool operator!=(const self& x)cosnt { return cur != x.cur; }
+	bool operator<(const self& x)const { return (node == x.node) ?( cur < x.cur) : (node < x.node); }
+	
+	T* cur;//看图,T表示缓冲区数据，三个指向缓冲区数据的指针
+	T* first;
+	T* last;
+	map_pointer node;//看图，map表示map，一个指向map的指针，这四个pointer，前三个指向T缓冲区数据，最后一个指针map，共同组成iterator
+};//最妙的是node这个map_pointer，中控器map就是一段内存都保存了一个指针，指向十分固定，第一个指针指向第一段缓冲区第一个空间
+//第二个指针指向第二个缓冲区，iterator的node强大的地方在于可以选择中控器的指针间接选择哪一个缓冲区
+
+template<typename T,typename Alloc=alloc,size_t BufSiz=0>
+class deque {
+public:
+	typedef T value_type;
+	typedef T* pointer;//map节点存储的指针，因为T就是元素。指向T指针就map节点存储的指针，T**就是iterator存储的指针
+	typename size_t size_type;
+
+	deque(int n, const value_type& value)//T就是元素类型就是value_type，可以修饰一个值一个元素
+		:start(), finish(), map(0), map_size(0) {
+		fill_initialize(n, value);
+	}
+	iterator begin() { return start; }//每个iterator含有cur，first，last，node，begin（）返回的也是
+	iterator end() { return finish; }
+	reference operator[](size_type n) { return start[difference(n)]; }//用start调用__deque_iterator的【】
+	reference front() { return *start; }//用start调用__deque_iterator的*返回cur指向的元素
+	reference back() {
+		iterator tmp = finish;
+		--tmp;//不能-1，只能--或-iterator
+		return *tem;//别改变finish，*会返回tmp的cur
+	}
+	size_type size() { return finish - first; }//调用-运算符返回迭代器距离
+	size_type max_size() { return size_type(-1); }//理应错误
+	bool empty() { return finish == first; }
+	void push_back(const value_type& t) {
+		if (finish.cur != finish.last - 1) {
+			construct(finish.cur, t);
+			++finish.cur;
+		}
+		else {
+			pushb_back_aux(t);
+		}
+	}
+	void push_front(const value_type& t) {
+		if (start.cur != start.first) {//如果=就是最后一个缓冲区没有元素
+			construct(start.cur - 1, t);
+			--start.cur;
+		}
+		else {
+			push_front_aux(t);
+		}
+	}
+	void pop_back() {
+		if (finish.cur != finish.first) {
+			--finish.cur;
+			destroy(finish.cur++)
+		}
+		else {
+			pop_back_aux();
+		}
+	}
+	void pop_front() {
+		if (start.last != start.last - 1) {//如果等于就是第一个缓冲区只有1个元素，也要aux
+			destroy(start.cur);
+			++start.cur;
+		}
+		else {
+			pop_front_aux();
+		}
+	}
+	void clear() {
+		for (map_pointer node = start.node + 1; node < finish.node; ++node) {//对于头尾以外的饱满node
+			destroy(*node, *node + buffer_size);//每次destroy一个缓冲区元素
+			data_allocator::deallocate(*node, buffer_size);
+		}
+		if(start.node!=finish.node){//全毁掉了还有两个node是头尾
+			destroy(start.cur, start.last);
+			destroy(finish.first, finish.cur);
+			data_allocator::deallocate(finish.first, buffer_size);//保留一个缓冲区，这就是初始状态
+		}
+		else {
+			//只有一个缓冲区，start和finish都指向它
+			destroy(start.cur, finish.cur);//destroy元素保留缓冲区
+		}
+		finish = start;
+	}
+	iterator erase(iterator pos) {
+		iterator next = pos;//迭代器可是含有4个指针的
+		++next;//重载运算符++cur
+		difference_type index = pos - start;//运算符重载-，得到两迭代器距离
+		if (index < (size() >> 1)) {//清除点之前的元素比较少，就移动清除点之前元素
+			copy_forward(start, pos, next);//start到pos迭代器指向的元素全部右移
+			pop_front();//因为移动实际是复制覆盖，所以最前面会有2个相同元素
+		}
+		else {
+			copy(next, finish, pos);//全部前移
+			pop_back();
+		}
+		return start + index;//+重载，得到迭代器中的cur指向erase的地方
+	}
+	iterator erase(iterator first, iterator last) {
+		if (first == start && last == finish) {//运算符重载==需要cur==
+			clear();
+			return finish;
+		}
+		else {
+			difference_type n= last - first;
+			difference_type elems_before = first - start;
+			if (elems_before < (size() - n) / 2) {//前面元素较少
+				copy_backword(start, first, last);//start到first元素向后移动到last
+				iterator new_start = start + n;
+				destroy(start, new_start);
+				for (map_pointer cur = start.node; cur < new_start.node; ++cur) {
+					data_allocator::deallocate(*cur, buffer_size());//deallocate缓冲区
+				}
+				start = new_start;
+			}
+			else {
+				copy(last, finish, first);//last到finish元素前移到first
+				iterator new_finish = finish - n;
+				destroy(new_finish, finish);
+				for (map_pointer cur = new_finish.node; cur < finish.node; ++cur) {
+					data_allocator::deallocate(*cur, buffer_size());
+				}
+			}
+		}
+	}
+	iterator insert(iterator position, const value_type& x) {
+		if (position.cur == first.cur) {
+			push_front(x);
+			return start;
+		}
+		else if (position.cur == finish.cur) {
+			push_back(x);
+			iterator tmp = finish;
+			--tmp;
+			return tmp;
+		}
+		else {
+			return insert_aux(position,x);
+		}
+	}
+
+protected:
+	typename  __deque_iterator<T, T&, T*, BufSiz> iterator;
+	typedef T** map_pointer;
+	typedef simple_alloc<value_type, Alloc>data_allocator;//配置一个元素
+	typedef simple_alloc<pointer, Alloc>map_allocator;//配置一个节点存储的指针
+
+	void fill_initilaize(int n, const value_type& value) {
+		creat_map_and_nodes(n);
+		map_pointer cur;//T**就是迭代器，迭代器有cur,first,finish,node,由后面赋值可知这里的cur=node不是cur
+		__STL_TRY{
+			//为每个node的缓冲区初始化
+			for (cur = start.node; cur < finish.node; ++node) {//在node上遍历不是在缓冲区
+				uninitialized_fill(*cur, *cur + buffer_size, value);//太厉害了，在node遍历，却*node在缓冲区赋值
+				uninitialized_fill(finish.first, finish.cur, vluae);//最后一个node指向的缓冲区不用全部赋值
+			}
+			catch(){}
+		}
+	}
+	void creat_map_and_nodes(size_type num_elements) {
+		size_type num_nodes = num_elements / buffer_size() + 1;//需要的节点数，最后一个有指向缓冲区的节点指针指向的缓冲区有备用空间
+		map_size = max(initial_map_size(), num_nodes + 2);//配置的节点数，一个map至少8个节点指针或者需要的节点数+2放两边可能个有1个或多个方便扩充
+		map = map_allocator::allocate(map_size);//利用map_allocator初始化map节点具有map_size个节点的map、map是指向map头的指针类似于迭代器里的node
+		map_pointer nstart = map + (map_size - node_size) / 2;//中间的节点有按顺序指向缓冲区，nstart是指向第一个中间节点的指针类似于start迭代器的node指针
+		map_pointer nfinish = nstart + num_nodes - 1;//nfinish是指向最后一个中间节点的指针类似于finish迭代器的的node指针
+		map_pointer cur;//完全不同于迭代器的cur指针，这里的指针指向的是节点
+		__STL_TRY{
+			for (cur = nstart; cur < nfinish; ++cur) //遍历中间节点
+				*cur = allocate_node();//给中间节点初始化指针，是的，之前都是假设的节点指针	
+		}
+		catch () {
+			//若分配失败，全部删除
+		}
+		start.set_node(nstart);//这里时start迭代器的node指针指向nstart指针指向的节点，迭代器其他指针要指向node指针指向节点指向的缓冲区
+		finish.set_node(nfinish);
+		start.cur = start.first;
+		finish.cur = finish.first + num_elements % buffer_size();
+	}
+	void push_back_aux(const value_type& t) {
+		value_type t_copy = t;
+		reserve_map_at_back();//可能连map都要换
+		*(finish.node + 1) = allocate_node;//finish迭代器的node指针指向中间节点最后一个的下一个未初始化节点让它指向一个创建的缓冲区
+		__STL_TRY{
+			construct(finish.cur,t_copy);//此时cur指向最后一个位置
+			finish.set_node(finish.node + 1);//finish迭代器node指针指向刚刚弄好的node，还帮忙吧finish的first和last指针弄好
+			finish.cur = finish.first;//cur不会像first和last一样帮忙弄好
+		}
+		__STL_UNWIND(deallocate_node(*(finish.node + 1));//分配失败了把刚分配的节点删了
+	}
+	void push_front_aux(const value_type& t) {
+		value_type t_copy = t;//为什么
+		reserve_map_at_front();
+		*(start.node - 1) = allocate_node;
+		__STL_TRY{
+			start.set_node(start.node - 1);//start迭代器的first和last指针换到上一个刚刚allocate的节点
+			start.cur = start.last - 1;//是接在新创建节点的最后一个
+			construct(start.cur, t_copy);
+		}
+		catch () {
+		//commit or rollback,不成功就全部退回
+		start.set_node(start.node + 1);
+		start.cur = start.first;
+		deallocate_node(*(start.node - 1));
+		}
+	}
+	void reserve_map_at_back(size_type nodes_to_add = 1) {
+		if (nodes_to_add + 1 > map_size - (finish.node - map)) {
+			//尾端空间不足
+			reallocate_node(nodes_to_add, false);
+		}
+	}
+	void reserve_map_at_front(size_type nodes_to_add - 1) {
+		if (node_to_add > start.node - map) {//start迭代器的node指针指向最左边的节点所以-map=0
+			reallocate_node(nodes_to_add, true);
+		}
+	}
+	void reallocate_node(size_type nodes_to_add, bood add_at_front) {
+		size_type old_num_nodes = finish.node - first.node + 1;
+		size_type new_num_nodes = old_num_nodes + nodes_to_add;
+		map_pointer new_nstart;//指向节点的指针类似于start迭代器的node指针
+		if (map_size > 2 * new_num_nodes) {
+			new_nstart = map + (map_size - new_num_nodes) / 2 + (add_at_front ? nodes_to_add : 0);//数学
+			if (new_nstart < start.node)copy(start.node, finish.node + 1, new_nstart);//map前面
+			else copy_backword(start.node, finish.node + 1, new_nstart + old_num_nodes);//map后面
+		}
+		else {
+			size_type new_map_size = map_size + max(map_size, nodes_to_add)+2;//创建新map的大小
+			map_pointer new_map = map_allocator::allocate(new_map_size);//创建新map返回指针指向map头
+			new_nstart = new_map + (new_map_size - new_num_nodes) / 2 + add_to_front ? nodes_to_add : 0;//数学
+			copy(start.node, finish.node, new_nstart);
+			map_allocator::deallocate(map, map_size);
+			map = new_map;
+			map_size = new_map_size;
+			start.set_node(new_nstart);
+			finish.set_node(new_nstart + old_num_nodes - 1);//整理好start和finish迭代器的first和last指针
+		}
+	}
+	void pop_back_aux() {
+		deallocate_node(finish.first);//释放最后一个缓冲区
+		finish.set_node(finish.node - 1);
+		finish.cur = finish.last - 1;
+		destroy(finish.cur);//既要把最后一个缓冲区（一个元素没有）deallocate、，又要把倒数第二个缓冲区最后一个元素destroy
+	}
+	void pop_front_aux() {
+		destroy(start.cur);
+		deallocate_node(start.first);
+		start.set_node(start.node + 1);
+		start.cur = start.first;
+	}
+	iterator insert_aux(iterator pos, const value_type& x) {
+		difference_type index = pos - start;
+		value_type x_copy = x;
+		if (index < size() / 2) {
+			push_front(front());
+			iterator front1 = start;
+			++front1;
+			iterator front2 = front1;
+			++front2;
+			pos = start + index;//以后肯定要全部前移
+			iterator pos1 = pos;
+			++pos1;
+			copy(front2, pos1, front1);//元素前移
+		}
+		else {
+			push_back(back());
+			iterator back1 = finish;
+			--back1;
+			iterator back2 = back1;
+			--back2;
+			pos = start + index;
+			copy_backword(pos, back2, back1);
+			*pos = x_copy;
+			return pos;
+		}
+	}
+
+	map_pointer map;//指向map的指针，类似于迭代器的node指针却又不在迭代器中
+	size_type map_size;//map内有多少指针
+	iterator start;//iterator不是一个指针，是一组4个指针组成迭代器，整个deque就只有2个迭代器而已，而且还很固定的
+	iterator finish;//start迭代器中的first，last，cur指针只会指向第一段缓冲区，finish只会最后一段
+};
+inline size_t __deque_buf_size(size_t n, size_t sz)//n代表缓冲区大小，sz代表一个T大小,返回缓冲区可防止多少个T节点
+{
+	return n != 0 ? n : (sz < 512 ? size_t(512 / sz) : size_t(1));
+}
