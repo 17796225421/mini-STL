@@ -1,18 +1,19 @@
-/*heap,heap不是六大组件之一，只是priority_queue的助手，底层容器是vector，有push，pop，sort，make函数，push将根结点放到容器末尾，因为heap只显示递减的，所以非递减的不会
-显示在heap上，sort利用的是不断的将根结点放到末尾，heap不断缩短，最终全部由递减变为递增，make利用完全二叉树隐式。堆没有
-迭代器，只能通过一定要求增减元素，无法遍历，类似stack和queue*/
+/*heap,heap不是六大组件之一，只是priority_queue的助手，底层容器是vector，有push，pop，sort，make函数，满足完全二叉树影响要
+push，插入元素是插到最下面不断上去，pop是把根结点放到vector最后，受完全二叉树影响吧最下面叶节点拿到根结点不断下去，sort利用的是
+不断pop，make不清楚什么完全二叉树隐式表述*/
+//为了满足完全二叉树，push必须用vector的push_back
 #pragma once
 template<typename RandomAccessIterator>
 inline void push_heap(RandomAccessIterator first, RandomAccessIterator last) {
-	__push_heap_aux(first, last, distance_type(first), value_type());
+	__push_heap_aux(first, last, distance_type(first), value_type());//调用这个函数前应默认已经push_back在最后了
 }
 template<typename RandomAccessIterator,typename Distance,typename T>
 inline void __push_heap_aux(RandomAccessIterator first, RandomAccessIterator last, Distance*, T*) {
-	__push_heap(first, Distance(last - first - 1), Distance(0), T(*(last - 1)));
+	__push_heap(first, Distance(last - first - 1), Distance(0), T(*(last - 1)));//新值就在最后的last-first-1
 }
 template<typename RandomAccessIterator, typename Distance, typename T>
 inline void __push_heap(RandomAccessIterator first, Distance holeIndex, Distance topIndex, T value) {//即将插入的地方是一个洞
-	Distance parents = (holeIndex - 1) / 2;
+	Distance parents = (holeIndex - 1) / 2;//这个函数就是push在结尾的值不断上去的过程
 	while (holeIndex > topIndex && *(first + parents) < value) {//为到顶端且父值小于新值，max_heap
 		*(first + holeIndex) = *(first + parents);//洞值=父值
 		holeIndex = parents;//父节点的号变为洞号
@@ -20,6 +21,8 @@ inline void __push_heap(RandomAccessIterator first, Distance holeIndex, Distance
 	}
 	*(first + holeIndex) = value;//洞值=新值
 }
+//想要pop取走根结点（最大值）本质是移至vector最后一个元素，这时的最大值不满足递减所以不算在heap中，为了补上根结点洞，最好办法
+//即是把最后一个叶节点放到根结点然后不断下去，只有它不会重新造成空洞
 template<typename RandomAccessIterator>
 inline void pop_heap(RandomAccessIterator first, RandomAccessIterator last) {
 	__pop_heap_aux(first, last, value_type(first));
@@ -67,7 +70,7 @@ void __make_heap(RandomAccessIterator first, RandomAccessIterator last, T*, Dist
 	if (last - first < 2)return;
 	Distance len = last - first;
 	Distance parent = (len - 2) / 2;
-	__adjust_heap(first, parent, len, T(*(first + parent);
+	__adjust_heap(first, parent, len, T(*(first + parent);//makeheap本质是pop，不断将最后一个元素放到根结点下一
 	if (parent == 0)return;
 	parent--;
 }
