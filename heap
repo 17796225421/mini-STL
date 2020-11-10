@@ -1,0 +1,73 @@
+/*heap,底层容器是vector，有push，pop，sort，make函数，push将根结点放到容器末尾，因为heap只显示递减的，所以非递减的不会
+显示在heap上，sort利用的是不断的将根结点放到末尾，heap不断缩短，最终全部由递减变为递增，make利用完全二叉树隐式。堆没有
+迭代器，只能通过一定要求增减元素，无法遍历，类似stack和queue*/
+#pragma once
+template<typename RandomAccessIterator>
+inline void push_heap(RandomAccessIterator first, RandomAccessIterator last) {
+	__push_heap_aux(first, last, distance_type(first), value_type());
+}
+template<typename RandomAccessIterator,typename Distance,typename T>
+inline void __push_heap_aux(RandomAccessIterator first, RandomAccessIterator last, Distance*, T*) {
+	__push_heap(first, Distance(last - first - 1), Distance(0), T(*(last - 1)));
+}
+template<typename RandomAccessIterator, typename Distance, typename T>
+inline void __push_heap(RandomAccessIterator first, Distance holeIndex, Distance topIndex, T value) {//即将插入的地方是一个洞
+	Distance parents = (holeIndex - 1) / 2;
+	while (holeIndex > topIndex && *(first + parents) < value) {//为到顶端且父值小于新值，max_heap
+		*(first + holeIndex) = *(first + parents);//洞值=父值
+		holeIndex = parents;//父节点的号变为洞号
+		parents = (holeIndex - 1) / 2;//新洞的父节点
+	}
+	*(first + holeIndex) = value;//洞值=新值
+}
+template<typename RandomAccessIterator>
+inline void pop_heap(RandomAccessIterator first, RandomAccessIterator last) {
+	__pop_heap_aux(first, last, value_type(first));
+}
+template<typename RandomAccessIterator>
+inline void __pop_heap_aux(RandomAccessIterator first, RandomAccessIterator last, T*) {
+	__pop_heap(first, last - 1, last - 1, T(*(last - 1)),distance_type(first);
+}
+template<typename RandomAccessIterator,typename T,typename Distance>
+inline void __pop_heap(RandomAccessIterator first, RandomAccessIterator last, RandomAccessIterator result,
+	T value, Distance*) {
+	*result = *first;//最大值，只是放到容器最后，并没有被取走，要取走也可以
+	__adjust_heap(first, Distance(0), Distance(last - first), value);
+}
+template<typename RandomAccessIterator, typename Distance, typename T>
+inline void __adjust_heap(RandomAccessIterator first, Distance holeIndex, Distance len, T value) {
+	Distance topIndex = holeIndex;//一开始holdIndex=0，topIndex就是hold
+	Distance secondChild = 2 * topIndex + 2;//右儿子是2
+	while (secondChild < len) {//len就是整个heap的个数
+		if (*(first + secondChild) < *(first + secondChild - 1)) --secondChild;//比较左右儿子的值,secondChild代表较大儿子，此时有儿子在左边因为左边大
+		*(first + holeIndex) = *(first + secondChild);//较大儿子为洞值上去
+		holeIndex = secondChild;//原本较大儿子的位置作为洞值，此时在左边，secondChild不是右儿子而是较大儿子，只不过一开始在右边
+		secondChild = 2 * (secondChild + 1);//较大儿子标签下移至右儿子但不是真的右儿子而是代表较大儿子，只要开始while就可以了
+	}
+		if (secondChild == len) {//没有右儿子只有左儿子
+			*(first + holeIndex) = *(first + (secondChild - 1));//左儿子值上移
+			holeIndex = secondChild - 1;
+		}
+		*(first + holeIndex) = value;//填入洞值
+}
+template<typename RandomAccessIterator>
+void sort_heap(RandomAccessIterator first, RandomAccessIterator last) {
+	//利用pop_head实际上每次都把最大值放到最后而不是销毁，可以反复利用来将最大heap变为最小heap
+	while (last - first > 1) {
+		pop_heap(first, last--);//每执行一次范围缩短一格，看图就像heap不断减少，实际上只不过是heap没有将不符合最大堆的数据显示，后面有很多
+	}
+}
+//利用完全二叉树将一组数据转为为堆，其实只要是递减就能自动变成堆，不递减不会再堆显示
+template<typename RandomAccessIterator>
+inline void make_heap(RandomAccessIterator first, RandomAccessIterator last) {
+	__make_heap(first, last, value_type(first), diastance_type(first));
+}
+template<typename RandomAccessIterator,typename T,typename Distance>
+void __make_heap(RandomAccessIterator first, RandomAccessIterator last, T*, Distance*) {
+	if (last - first < 2)return;
+	Distance len = last - first;
+	Distance parent = (len - 2) / 2;
+	__adjust_heap(first, parent, len, T(*(first + parent);
+	if (parent == 0)return;
+	parent--;
+}
