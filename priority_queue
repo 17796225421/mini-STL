@@ -1,0 +1,45 @@
+/*priority_queue，适配器，利用heap，底层vector，完全二叉树，push用vector的push_back插入元素并利用堆的不断上去既插入
+元素又保持了完全二叉树，pop先用堆的pop把根放到最后，把最后叶节点放到根不断下去保持了完全二叉树，并 用vector的pop_back
+把一开始就放到最后的根元素拿出来*/
+#pragma once
+//没有迭代器，进出有规则，不提供遍历
+//priority_queue 元素递减，只能尾进头出，利用最大堆，底层vector
+template<typename T,typename Sequence=vector<T>>
+class priority_queue {
+public:
+	typedef Sequence::value_type value_type;
+	typedef Sequence::size_type size_type;
+	typedef Sequence::reference reference;
+	typedef Sequence::const_reference const_reference;
+
+	priority_queue() :c() {};
+	explicit priority_queue(const Compare& x) :c(), comp(x) {};
+	template<typename InputIterator>
+	priority_queue(InputIterator first,InputIterator last,const Compare&x):
+		c(first, last), comp(x) {
+		make_heap(c.begin(), c.end(), comp);
+	}
+	template <typename InputIterator>
+	priority_queue(InputIterator first, InputIterator last) : c(first, last) { make_heap(first, last, comp); }
+	bool empty()const { return c.empty(); }
+	size_type size()const { return c.size(); }
+	const_reference top()const { return c.front(); }
+	void push(const value_type& x) {
+		__STL_TRY{
+			c.push_back(x);//先插入vector末端
+		push_heap(c.begin(), c.end(), comp);//再利用插入底端不断上去
+		}
+		__STL_UNWIND(c.clear());
+	}
+	void pop() {
+		__STL_TRY{
+			//并不是直接弹出，而是先重排heap将根放到最后，在vector pop_back弹出，push相反
+			pop_heap(c.begin(),c.end(),comp);//根放到最后，最后一个叶节点放到根不断下去,保持了完全二叉树
+		c.pop_back();//把一开始被放到最后的根结点拿出来
+		}
+	}
+
+protected:
+	Sequence c;
+	Compare comp;//大小比较标准
+};
