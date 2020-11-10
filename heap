@@ -1,4 +1,4 @@
-/*heap,底层容器是vector，有push，pop，sort，make函数，push将根结点放到容器末尾，因为heap只显示递减的，所以非递减的不会
+/*heap,heap不是六大组件之一，只是priority_queue的助手，底层容器是vector，有push，pop，sort，make函数，push将根结点放到容器末尾，因为heap只显示递减的，所以非递减的不会
 显示在heap上，sort利用的是不断的将根结点放到末尾，heap不断缩短，最终全部由递减变为递增，make利用完全二叉树隐式。堆没有
 迭代器，只能通过一定要求增减元素，无法遍历，类似stack和queue*/
 #pragma once
