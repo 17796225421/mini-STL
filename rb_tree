@@ -1,0 +1,337 @@
+/*rb_tree是一种奇迹，美丽的数据结构240页看图分析代码每一步是如何实现这一堆图的就会了,光看代码不可能看得懂，想要用并不难
+记住header，root，parent，left，right，black，red，然后看图看代码就行了*/
+#pragma once
+typedef bool __rb_tree_color_type;
+const __rb_tree_color_type __rb_tree_red = false;
+const __rb_tree_color_type __rb_tree_black = true;
+struct __rb_tree_node_base {
+	typedef __rb_tree_color_type color_type;
+	typedef __rb_tree_node_base* base_ptr;
+
+	static base_ptr minimum(base_ptr x) {
+		while (x->left != 0)x = x->left;
+		return x;//当没有左节点就对了
+	}
+	static base_ptr maximum(base_ptr x) {
+		while (x->right != 0)x = x->right;
+		return x;
+	}
+
+	color_type color;
+	base_ptr parent;//指向父节点
+	base_ptr left;//指向左节点
+	base_ptr right;//指向右节点
+};
+template<typename Value>
+struct __rb_tree_node :public __rb_tree_node_base {
+	typedef __rb__tree_node<Value>* link_node;
+
+	Value value_field;//节点值
+};
+struct __rb_tree_base_iterator {
+	typedef __rb_tree_node_base::base_ptr base_ptr;
+	typedef bidirectional_iterator_tag iterator_categroy;
+	typedef ptrdiff_t difference_type;
+
+	void increment() {//该函数用于迭代器的++操作
+		if (node->right != 0) {
+			node = node->right;//right指向右边的node，node指针指向右边的node。就是往右走
+			while (node->left != 0)node = node->left;//先往右走一步，在一直往左走，由二叉搜索树性质就是增加最小的节点
+		}//本质是某子树右子树的最小值就在最左边，++要找到这个最左边
+		else {
+			//没有右节点
+			base_ptr y = node->parent;//指向父节点
+			while (node == y->right) {
+				//当现在node指向的节点就是右节点，
+				node = y;//一直上述，直到不是不为右节点为止，可这样应该是--而不是++
+				y = y->parent;
+			}
+			if (node->right != y)node = y;//这是下面的本质，但如果相等呢。这种情况很难，看图，一开始就指向根结点且没有右节点，注意head节点和根结点互指
+		}//本质是某节点左子树的最大值就在最右边，反过来左子树最大值就在最右边，++后就变为某节点，++要找到这个某节点
+	}
+	void decrement() {
+		if (node->color == __rb_tree_red && node->parent->parent == node)node = node->right;//这种情况很难，看图，迭代器指向end，注意图中的header和根结点互指
+		else if (node->left != 0) {
+			base_ptr y = node->left;
+			while (y->right != 0)y = y->right;//一直往右走
+			node = y;
+		}//本质是某节点的左子树最大值就是最右边，--要找到这个最右边
+		else {
+			//既不是根结点也没有左节点
+			base_ptr y= node->parent;
+			while (node == y->left) {
+				node = y;
+				y = y->parent;
+			}
+			node = y;
+		}//本质是某节点右子树的最小值在最左边，--就是要帮最左边这个节点找到某节点
+	}
+
+	base_ptr node;//只有一个双向迭代器
+};
+template<typename Value,typename Ref,typename Ptr>
+struct __rb_tree_iterator :public __rb_tree_base_iterator {
+	typedef Value value_type;
+	typedef Ref reference;
+	typedef Ptr pointer;
+	typedef __rb_tree_iterator<Value, Value&, Value*> iterator;
+	typedef __rb_tree_iterator<Value, const Value&,const Value*> const_iterator;
+	typedef __rb_tree_iterator<Value, Ref, Ptr>self;
+	typedef __rb_tree_node<Value>* link_type;//指向节点的指针link_type类型
+
+	__rb_tree_iterator() {}
+	__rb_tree_iterator(link_type x) { node = x; }//node是基类指向节点的指针正好link_type也是指向节点的指针
+	__rb_tree_iterator(const iterator* x) { node = x->node; }//x迭代器指向的node基类中的node成员
+	reference operator*()const { return link_tyepe(node)->value_field; }
+#ifndef __SGI_STL_NO_ARROW_OPERATOR
+	pointer operator->()const { return &(operator*()); }
+#endif
+	self& operator++() { increment(); return *this; }
+	self operator++(int) {
+		self tmp = *this;
+		increment();
+		return tmp;
+	}
+	self& operator--() { decrement(); return *this; }
+	self operator--(int) {
+		self tmp = *this;
+		decrement();
+		return tmp;
+	}
+};
+template<typename Key,typename Value,typename KeyOfValue,typename Compare,typename Alloc=alloc>
+class rb_tree {
+public:
+	typedef Key key_type;
+	typedef Value value_type;
+	typedef value_type* pointer;
+	typedef const value_type* const_pointer;
+	typedef value_type& reference;
+	typedef const value_type& const_reference;
+	typedef __rb_tree_node* link_type;
+	typedef size_t size_type;
+	typedef ptrdiff_t difference_type;
+
+	rb_tree(const Compare& comp = Compare()) :node_count(0), key_compare(comp) { init(); }
+	~rb_tree() {
+		clear();
+		put_node(header);//只要header没了就全部没了找不到的类似于slist超有用的header
+	}
+	rb_tree<Key, Value, KeyOfValue, Compare, Alloc>& operator=(const rb_tree<Key, Value, KeyOfValue, Compare, Alloc>& x);
+	
+	Compare key_comp()const { return key_compare; }
+	iterator begin() { return leftmost(); }
+	iterator end() { return header; }//终点就是header指向
+	bool empty()const { return node_count == 0; }
+	size_type size()const { return node_count; }
+	size_type max_size()const { return size_type(-1); }//size_t实际上是unsigned int
+	pair<iterator, bool> insert_unique(const value_type& x);
+	iterator insert_equal(const value_type& x);//节点值是独一无二还是重复
+	iterator find(const Key& k);
+
+protected:
+	typedef void* void_pointer;
+	typedef __rb_tree_node_base* base_ptr;//指向node的指针
+	typedef __rb_tree_node<Value> rb_tree_node;
+	typedef simple_alloc<__rb_tree_node, Alloc> rb_tree_node_allocator;
+	typedef __rb_tree_color_type color_type;
+	typedef __rb_tree_iteraotr<value_type, reference, pointer> iterator;
+
+	link_type get_node() { return rb_tree_node_allocator::allocate(); }
+	void put_node(link_type p) { rb_tree_node_allocator::deallocate(p); }
+	link_type creat_node(const value_type& x) {
+		link_type tmp = get_node();
+		__SLR_TRY{
+			construct(&tmp->value_field,x);
+		}
+		__UNWIND{ put_node(tmp); }
+		return tmp;
+	}
+	link_type clone_node(link_type x) {
+		link_type tmp = creat_node(x->value_field);
+		tmp->color = x->color;
+		tmp->left =0;
+		tmp->right =0;//复制value和color，不赋值三指针
+		return tmp;
+	}
+	void destroy_node(link_type p) {
+		destroy(&p->value_field);
+		put_node(p);
+	}
+	link_type& root()const { return (link_type&)header->parent; }//返回根结点指针
+	link_type& leftmost()const { return (link_type&)header->left; }//左边最大就是header的左节点
+	link_type& rightmost()const { return (link_type&)header->right; }//右边最大就是header的右节点
+	static link_type& parent(link_type x) { return (link_type&)x->parent; }
+	static link_type& left(link_type x) { return (link_type&)x->left; }
+	static link_type& right(link_type x) { return (link_type&)x->right; }
+	static reference value(link_type x) { return x->value_field; }
+	static const Key& key(link_type x) { return KeyOfValue()(value(x); }
+	static color_type& color(base_ptr x) { return (color_type&)x->color; }//这个六个函数指向的是node派生类的成员
+	static link_type& parent(base_ptr x) { return (link_type&)x->parent; }
+	static link_type& left(base_ptr x) { return (link_type&)x->left; }
+	static link_type& right(base_ptr x) { return (link_type&)x->right; }
+	static reference value(base_ptr x) { return x->value_field; }
+	static const Key& key(base_ptr x) { return KeyOfValue()(value(x); }
+	static color_type& color(base_ptr x) { return (color_type&)x->color; }//用指向node基类的指针，显示转化为指向派生类指针，返回的+指向派生类的指针
+	static link_type minimum(link_type x) { return (link_type)__rb_tree_node_base::minimum(x); }
+	static link_type maximum(link_type x) { return (link_type)__rb_tree_node_base::maximum(x); }
+
+	size_type node_count;//树大小，节点数量
+	link_type header;//header节点和根结点互为对方父节点，header节点就是3根指针指向根结点，最大结点，最小节点，初始状态只有header没根结点
+	Compare key_compare;//比较键大小，仿函数
+	rb_tree<int, int, identity<int>, less<int>> itree;//键值，实值，比较标准
+private:
+	iterator __insert(base_ptr x, base_ptr y, const value_type& v);
+	link_type __copy(link_type x, link_type p);
+	void __erase(link_type x);
+	void init() {
+		header = get_node();
+		color(header) = __rb_tree_red;//header为红，区分header和root是黑
+		root() = 0;
+		leftmost() = header;
+		rightmost() = header;
+	}//init用来辅助构造函数
+};
+template<typename Key,typename Value,typename KeyOfValue, typename Compare, typename Alloc>
+typename rb_tree<Key,Value,KeyOfValue,Compare,Alloc>::iterator 
+rb_tree<Key, Value, KeyOfValue, Compare, Alloc>::insert_equal(const Value& v) {
+	//虽然只有value，但仿函数KeyOfValue可以获得其键值
+	link_type y = header;
+	link_type x = root();//指向根结点
+	while (x != 0) {
+		y = x;
+		x = key_compare(KeyOfValue()(v), key(x)) ? left(x) : right(x);//左边小于右边为1向左
+	}
+	return __insert(x, y, v);//x为插入点，v为插入值
+}
+template<typename Key, typename Value, typename KeyOfValue, typename Compare, typename Alloc>
+pair<typename rb_tree<Key,Value,KeyOfValue,Compare,Alloc>::iterator,bool>
+rb_tree<Key,Value,KeyOfValue,Compare,Alloc>::insert_unique(const Value& v) {
+	link_type y = header;
+	link_type x = root();
+	bool comp = true;
+	while (x != 0) {
+		y = x;
+		comp = key_compare(KeyOfValue()(v), key(x));//遇大为真往大的左边移
+		x = comp ? left(x) : right(x);//不相同键值就可以下去
+	}
+	iterator j = iterator(y);
+	if (comp)//离开循环时任然是大
+		if (j == begin())return pair<iterator, bool>(__insert(x, y, v), true);//插入点的父节点正好是最左,x插入点，v是值
+		else --j;//父节点--
+	if (key_compare(key(j.node), KeyOfValue()(v)))return pair<iterator,bool>(__insert(x, y, v), true);//遇小，插小的右
+	return pair<iterator, bool>(j.false);//知道这里一定键值重复，不插入，返回false
+}
+template<typename Key, typename Value, typename KeyOfValue, typename Compare, typename Alloc>
+typename rb_tree<Key, Value, KeyOfValue, Compare, Alloc>::iterator
+rb_tree<Key, Value, KeyOfValue, Compare, Alloc>::__insert(base_ptr x_, base_ptr y_, const Value& v) {
+	link_type x = (link_type)x_;
+	link_type y =(link_type) y_;
+	link_type z;
+	if (y == header || x != 0 || key_compare()(KeyOfValue(v), Key(y))) {
+		z = creat_node(v);//创建一个节点保存v，z指向该节点
+		left(y) = z;//z赋值给y左节点,如果y是header那么z就是最左边
+		if (y == header) {
+			root() = z;//y是header那么z就是根结点实现插入
+			rightmost() = z;//header的右节点就是z
+		}
+		else if (y == leftmost())leftmost = z;//如果y在最左边那么z赋值给最左边
+	}
+	else {
+		z = creat_node(v);
+		right(y) = z;//z赋值给y的右节点
+		if (y == rightmost())rightmost() = z;//如果y是最右节点那么z即是最后,维护最右节点使他用于最右
+	}
+	parent(z) = y;
+	left(z) = 0;
+	right(z) = 0;//新节点z必定是叶节点,看图可知叶节点的左右节点必定是0
+	__rb_tree_rebalance(z, header->parent);//重定颜色，参数根结点
+	++node_count;
+	return iterator(z);//z原本是指向节点的指针，现在是指向节点的迭代器,其实iterator类也只有一个指向节点的指针
+}
+//强大的全局函数__rb_tree_rebalance，旋转并调整颜色
+inline void __rb_tree_rebalance(__rb_tree_node_base* x, __rb_tree_node_base*& root) {//插入的时候调用
+	x->color = __rb_tree_red;//新节点必红
+	while (x != root && x->parent->color == __rb_tree_red) {
+		//父节点红
+		if (x->parent == x->parent->parent->left) {
+			//父节点是左节点
+
+			__rb_tree_node_base* y = x->parent->parent->right;//y伯父节点
+			if (y && y->color == __rb_tree_red) {
+				//伯父节点红
+				x->parent->color = __rb_tree_black;
+				y->color = __rb_tree_black;//父，伯父黑
+				y->parent->color = __rb_tree_red;//祖父红
+				x = x->parent->parent;//x向上检查
+			}
+			else {//无伯父节点或其为黑
+				if (x = x->parent->right) {
+					//新节点是右节点
+					x = x->parent;
+					__rb_tree_rotate_left(x, root);//左旋
+				}
+				x->parent->color = __rb_tree_black;
+				x->parent->parent->color = __rb_tree_red;//父节点为黑，祖父节点为红
+				__rb_tree_rotate_right(x->parent->parent, root);//右旋
+			}
+		}
+		else {//父节点为右节点
+			__rb_tree_node_base* y = x->parent->parent->left;//y为伯父节点
+			if (y && y->color == __rb_tree_red) {//伯父节点为红
+				x->parent->color = __rb_tree_black;
+				y->color = __rb_tree_black;
+				y->parent->color = __rb_tree_red;//祖父红，父伯父黑
+				x = x->parent->parent;//向上检查
+			}
+			else {
+				//无伯父节点或伯父节点为黑
+				if (x == x->parent->left) {
+					//x为左节点
+					x = x->parent;
+					__rb_tree_rotate_right(x, root);//右旋
+				}
+				x->parent->color = __rb_tree_black;
+				x->parent->parent->color = __rb_tree_red;
+				__rb_tree_rotate_left(x->parent->parent, root);//左旋
+			}
+		}
+	}//while结束+
+	root->color = __rb_tree_black;
+}
+inline void __rb_tree_rotate_left(__rb_tree_node_base* x, __rb_tree_node_base*& root) {
+	//x为旋转点
+	__rb_tree_node_base* y = x->right;//y为x右节点
+	if (y->left != 0) y->left->parent = x;//相当于y=x
+	y->parent = x->parent;
+	//令y完全顶替x位置
+	if (x == root)root = y;
+	else if (x == x->parent->left)x->parent->left = y;//这不就相当于x=y
+	else x->parent->right = y;
+	y->right = x;
+	x->parent = y;//看似重复操作，其实y的right是指针，x的parent也是指针都要换
+}
+//新节点必为红节点，如果父节点也是红节点就要选择变色
+inline void __rb_tree_rotate_right(__rb_tree_node_base* x, __rb_tree_node_base*& root) {
+	__rb_tree_node_base* y = x->left;
+	x->left = y->right;
+	if (y->right != 0) y->right->parent = x;
+		y->parent = x->parent;//看似奇怪，实际上是在调整指针，一个节点有3个指针
+		if (x == root)root = y;
+		else if (x = x->parent->right)x->parent->right = y;
+		else x->parent->left = y;
+		y->right = x;
+		x->parent = y;
+}
+template<typename Key,typename Value,typename KeyOfValue,typename Compare,typename Alloc>
+typename rb_tree<Key,Value,KeyOfValue,Compare,Alloc>::iterator
+rb_tree<Key, Value, KeyOfValue, Compare, Alloc>::find(const Key& k) {
+	link_type y = header;
+	link_type x = root();
+	while (x != 0)
+		if (!key_compare(Key(x), k))//x键值大于k，遇到大值往左走
+			y = x, x = left(x);
+		else x = right(x);
+	iterator j = iterator(y);
+	return (j = end() || key_compare(k, Key(j.node))) ? end() : j;
+}
