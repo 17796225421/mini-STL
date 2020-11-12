@@ -1,6 +1,6 @@
-/*set，利用底层红黑树，特点是键值和value一样，且不可改变，所以都是const*/
+/*set，利用底层红黑树，特点是键值和value一样，且不可改变，所以都是const，multset只有insert_equal不一样其他一样*/
 #pragma once
-template<typename Key,typename Compare=less<Key>,typename Alloc=alloc>
+template<typename Key, typename Compare = less<Key>, typename Alloc = alloc>
 class set {
 	friend bool operator==__STL_NULL_TMPL_ARGS(const set&, const set&);
 	friend bool operator< __STL_NULL_TMPL_ARGS(const set&, const set&);
@@ -26,8 +26,10 @@ public:
 	explicit set(const Compare& comp) :t(comp) {}
 	template<typename InputIterator>
 	set(InputIterator first, InputIterator last) : t(Compare()) { t.insert_unique(first, last); }
+	//multset换成insert_equal
 	template<typename InputIterator, typedef Compare>
 	set(InputIterator first, InputIterator last, const Compare& comp) : t(comp) { t.insert_unique(first, last); }
+	//multset换成insert_equal
 	set(const set<Key, Compare, Alloc>& x) :t(x.t) {}
 	set<Key, Compare, Alloc>& operator=(const set<Key, Compare, Alloc>& x) {
 		t = x.t;
@@ -58,9 +60,10 @@ public:
 		typedef typename rep_type::iterator rep_iterator;
 		t.erase((rep_iterator&)position);
 	}
-	void erase(iterator first,iterator last) {
+	//multset换成insert_equal
+	void erase(iterator first, iterator last) {
 		typedef typename rep_type::iterator rep_iterator;
-		t.erase((rep_iterator&)first,(rep_iterator&)last);
+		t.erase((rep_iterator&)first, (rep_iterator&)last);
 	}
 	void erase(const key_type& x) { return t.erase(x); }
 	void clear() { t.clear; }
@@ -75,7 +78,7 @@ private:
 
 	rep_type t;//红黑树表现set,set有且只有一个数据成员t，类型是红黑树
 };
-template<typename Key,typename Compare,typename Alloc>
+template<typename Key, typename Compare, typename Alloc>
 inline bool operator==(const set<Key, Compare, Alloc>& x, const set<Key, Compare, Alloc>& y) { return x.t == y.t; }
 template<typename Key, typename Compare, typename Alloc>
 inline bool operator==(const set<Key, Compare, Alloc>& x, const set<Key, Compare, Alloc>& y) { return x.t < y.t; }
