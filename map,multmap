@@ -1,3 +1,4 @@
+/*map的节点是pair，底层是红黑树，只有operator[]较难，键值不能修改而实值可以修改，multmap只有insert换一下*/
 #pragma once
 //不可以修改map元素因为可能会改到键值所以不是mutable迭代器，可以修改实值所以也不是const
 template<typename T1,typename T2>
