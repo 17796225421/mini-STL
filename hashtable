@@ -1,0 +1,111 @@
+/*hashtable，代码，到头来只是一副图像，反复看的是成员数据和难的函数，从而反复想象，图像一：成员数据图，图像二，resize图，
+图像3三，insert_unique图,图像四，insert_equal图
+*/
+#pragma once
+template <typename Value>
+struct __hashtable_node {
+	__hashtable_node* next;//节点储存指向下一个节点的指针next，值val
+	Value val;
+};
+template <typename Value,typename Key,typename HashFcn,typename ExtractKey,typename EqualKey,typename Alloc>
+struct __hashtable_iterator {
+	node* cur;
+	hashtable* ht;
+};
+template <typename Value, typename Key, typename HashFcn, typename ExtractKey, typename EqualKey, typename Alloc>
+class hashtable {
+public:
+	pair<iterator, bool> insert_unique(const value_type& obj) {
+		resize(num_elements + 1);
+		return insert_unique_noresize();
+	}
+	iterator insert_equal(const value_type& obj) {
+		resize(num_elemets + 1);
+		return insert_equal_noresize(obj);
+	}
+	void clear() {
+		for (size_type n = 0; n < buckets.size(); ++i) {
+			//对每一个桶
+			node* cur = buckets[n];
+			while (cur != 0) {
+				node* next = cur->next;
+				delete_node(cur);
+				cur = next;//cur指向next指针指向的第二个节点
+			}
+			buckets[i] = 0;//指针空
+		}
+		num_elements = 0;
+	}//并不十分vector空间，里面的指针都是空指针
+	void copy_from(const hashtable& ht) {
+		//从一个哈希表赋值
+		buckets.clear();//复制前清空
+		buckets.reverse(ht.buckets);//如果容量小就将对象容量赋值过来，否则不变
+		buckets.insert(buckets.end(), ht.buckets.size(), (node*)0);//把buckets空间都是0指针
+		__STL_TRY{
+			for (size_type i = 0; i < ht.buckets.size(); ++i) {
+				if (const node* cur = ht.buckets[i]) {
+					node* copy = new_node(cur->val);//复制节点
+					buckets[i] = copy;//插入节点
+				}
+}
+		}
+	}
+private:
+	void resize(size_type num_elements_hint) {
+		const size_type old_n = buckets.size();
+		if (num_elements_hint > old_n) {
+			const size_type n = next_size(num_elements_hint);
+			if (n > old_n) {
+				vector<node*, Alloc>tmp(n, (node*)0);
+				__STL_TRY{
+					for (size_type bucket = 0; bucket < old_n; ++buckets) {
+						node* first = buckets[bucket];//first只是一个指针而已
+						while (first) {
+							size_type new_bucket = buk_num(first->val, n);
+							buckets[bucket] = first->next;
+							first->next = tmp[new_bucket];//first指针指向的节点的next指向tmp指针指向的的第一个节点
+							tmp[new_bucket] = first;//tmp指针指向first指针指向的节点
+							first = buckets[bucket];//first只是一个指针，换一个节点指向
+						}
+					}
+				buckets.swap(tmp);
+				}
+			}
+		}
+	}
+	pair<iterator, bool>insert_unique_noresize(const value_type& obj) {
+		const size_type n = bkt_num(obj);
+		node* first = buckets[n];
+		for (node* cur = first; cur; ++cur) {
+			if (equals(get_key(cur->val), get_key(obj)))return pair<iterator, bool>(iterator(cur, this), false);
+		}
+		node* tmp = new_node(obj);//tmp指针指向新节点
+		tmp->next = first;//tmp指向节点的next指针指向first指针指向的节点
+		buckets[n] = tmp;//篮子指针指向tmp
+		++num_elements;
+		return pair<iterator, bool>(iterator(tmp, this), true);
+	}
+	iterator insert_equal_noresize(const value_type& obj) {
+		const size_type n = bkt_num(obj);
+		node* first = buckets[n];
+		for(node*cur=first;cur;cur=cur->next)
+			if (equals(get_key(cur->val), get_key(obj))) {
+				node* tmp = new_node(obj);
+				tmp->next = cur->next;
+				cur->next = tmp;
+				++num_elements;
+				return iterator(tmp, this);
+			}
+		node* tmp = new_node(obj);
+		tmp->next = first;
+		buckets[n] = tmp;
+		++num_elements;
+		return iterator(tmp, this);
+	}
+	hasher hash;//哈希函数
+	key_equal = equals;//判断物体是否相等如石头如const char*
+	ExtractKey get_key;//三个模板参数类型数据成员，获得键值
+	static const int __stl_num_primes = 28;
+	static const unsigned long __stl_prime_list[__stl_num_primes] = {};//有28个质数的数组
+
+};
